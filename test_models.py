@@ -183,13 +183,75 @@ class ModelTester:
         )
         return row
     
-    def test_all_models(self, test_message: str = "hello"):
+    def save_results(self, results: List[Dict], output_file: str, test_start_time: str):
+        """保存测试结果到文件"""
+        try:
+            with open(output_file, 'w', encoding='utf-8') as f:
+                # 写入文件头
+                f.write("="*110 + "\n")
+                f.write("大模型连通性和可用性测试结果\n")
+                f.write(f"Base URL: {self.base_url}\n")
+                f.write(f"测试时间: {test_start_time}\n")
+                f.write("="*110 + "\n\n")
+                
+                # 定义列宽
+                col_widths = {
+                    'model': 45,
+                    'time': 9,
+                    'error': 12,
+                    'content': 40
+                }
+                
+                total_width = sum(col_widths.values()) + 6
+                
+                # 写入表头
+                f.write("="*total_width + "\n")
+                header = (
+                    f"{pad_string('模型名称', col_widths['model'], 'left')} | "
+                    f"{pad_string('响应时间', col_widths['time'], 'center')} | "
+                    f"{pad_string('错误信息', col_widths['error'], 'center')} | "
+                    f"{pad_string('响应内容', col_widths['content'], 'left')}"
+                )
+                f.write(header + "\n")
+                f.write("-"*total_width + "\n")
+                
+                # 写入测试结果
+                success_count = 0
+                fail_count = 0
+                for result in results:
+                    if result['success']:
+                        success_count += 1
+                    else:
+                        fail_count += 1
+                    
+                    row = self.format_row(
+                        result['model'],
+                        result['success'],
+                        result['response_time'],
+                        result['error_code'],
+                        result['content'],
+                        col_widths
+                    )
+                    f.write(row + "\n")
+                
+                # 写入统计信息
+                f.write("="*total_width + "\n")
+                success_rate = (success_count/len(results)*100) if results else 0
+                f.write(f"测试完成 | 总计: {len(results)} | 成功: {success_count} | 失败: {fail_count} | 成功率: {success_rate:.1f}%\n")
+                f.write("="*total_width + "\n")
+                
+            print(f"[信息] 测试结果已保存到: {output_file}")
+        except Exception as e:
+            print(f"[警告] 保存结果失败: {e}")
+    
+    def test_all_models(self, test_message: str = "hello", output_file: str = None):
         """测试所有模型"""
+        test_start_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         header_width = 110  # 紧凑模式的总宽度
         print(f"\n{'='*header_width}")
         print(f"大模型连通性和可用性测试")
         print(f"Base URL: {self.base_url}")
-        print(f"测试时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"测试时间: {test_start_time}")
         print(f"{'='*header_width}\n")
         
         print("正在获取模型列表...")
@@ -224,6 +286,7 @@ class ModelTester:
         
         success_count = 0
         fail_count = 0
+        results = []
         
         # 边测试边输出
         for idx, model in enumerate(models, 1):
@@ -241,6 +304,15 @@ class ModelTester:
             else:
                 fail_count += 1
             
+            # 保存结果到列表
+            results.append({
+                'model': model_id,
+                'success': success,
+                'response_time': response_time,
+                'error_code': error_code,
+                'content': content
+            })
+            
             # 立即输出当前测试结果
             row = self.format_row(model_id, success, response_time, error_code, content, col_widths)
             print(row)
@@ -249,6 +321,10 @@ class ModelTester:
         print(f"{'='*total_width}")
         print(f"测试完成 | 总计: {len(models)} | 成功: {success_count} | 失败: {fail_count} | 成功率: {(success_count/len(models)*100):.1f}%")
         print(f"{'='*total_width}\n")
+        
+        # 保存结果到文件
+        if output_file:
+            self.save_results(results, output_file, test_start_time)
 
 
 def main():
@@ -260,6 +336,7 @@ def main():
   python test_models.py --api-key sk-xxx --base-url https://api.openai.com
   python test_models.py --api-key sk-xxx --base-url https://api.openai.com --message "你好"
   python test_models.py --api-key sk-xxx --base-url https://api.openai.com --timeout 60
+  python test_models.py --api-key sk-xxx --base-url https://api.openai.com --output my_results.txt
         """
     )
     
@@ -288,6 +365,13 @@ def main():
         help='请求超时时间(秒) (默认: 30)'
     )
     
+    parser.add_argument(
+        '--output',
+        '-o',
+        default='test_results.txt',
+        help='测试结果输出文件路径 (默认: test_results.txt)'
+    )
+    
     args = parser.parse_args()
     
     try:
@@ -296,7 +380,7 @@ def main():
             base_url=args.base_url,
             timeout=args.timeout
         )
-        tester.test_all_models(test_message=args.message)
+        tester.test_all_models(test_message=args.message, output_file=args.output)
     except KeyboardInterrupt:
         print("\n\n测试已取消")
         sys.exit(0)
