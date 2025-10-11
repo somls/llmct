@@ -10,8 +10,9 @@ import sys
 import time
 from typing import List, Dict, Tuple
 import requests
-from datetime import datetime
+from datetime import datetime, timedelta
 import unicodedata
+import os
 
 
 def display_width(text: str) -> int:
@@ -43,8 +44,128 @@ def pad_string(text: str, width: int, align: str = 'left') -> str:
         return text + ' ' * padding
 
 
+class ResultCache:
+    """测试结果缓存管理"""
+    def __init__(self, cache_file: str = 'test_cache.json', cache_duration_hours: int = 24):
+        self.cache_file = cache_file
+        self.cache_duration = timedelta(hours=cache_duration_hours)
+        self.cache = self.load_cache()
+    
+    def load_cache(self) -> Dict:
+        """加载缓存文件"""
+        if not os.path.exists(self.cache_file):
+            return {}
+        try:
+            with open(self.cache_file, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception as e:
+            print(f"[警告] 加载缓存失败: {e}")
+            return {}
+    
+    def save_cache(self):
+        """保存缓存到文件"""
+        try:
+            with open(self.cache_file, 'w', encoding='utf-8') as f:
+                json.dump(self.cache, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            print(f"[警告] 保存缓存失败: {e}")
+    
+    def is_cached(self, model_id: str) -> bool:
+        """检查模型是否在缓存中且未过期"""
+        if model_id not in self.cache:
+            return False
+        
+        cached_data = self.cache[model_id]
+        # 只缓存成功的测试结果
+        if not cached_data.get('success', False):
+            return False
+        
+        try:
+            test_time = datetime.fromisoformat(cached_data['timestamp'])
+            if datetime.now() - test_time < self.cache_duration:
+                return True
+        except:
+            pass
+        
+        return False
+    
+    def get_cached_result(self, model_id: str) -> Dict:
+        """获取缓存的测试结果"""
+        return self.cache.get(model_id, {})
+    
+    def update_cache(self, model_id: str, success: bool, response_time: float, 
+                     error_code: str, content: str):
+        """更新缓存"""
+        now = datetime.now().isoformat()
+        
+        # 获取现有记录（如果存在）
+        existing = self.cache.get(model_id, {})
+        failure_count = existing.get('failure_count', 0)
+        failure_history = existing.get('failure_history', [])
+        
+        # 更新失败统计
+        if not success:
+            failure_count += 1
+            failure_history.append({
+                'timestamp': now,
+                'error_code': error_code
+            })
+            # 只保留最近10次失败记录
+            if len(failure_history) > 10:
+                failure_history = failure_history[-10:]
+        else:
+            # 成功时不重置失败计数，只更新成功信息
+            pass
+        
+        self.cache[model_id] = {
+            'success': success,
+            'response_time': response_time,
+            'error_code': error_code,
+            'content': content,
+            'timestamp': now,
+            'failure_count': failure_count,
+            'last_failure': now if not success else existing.get('last_failure', ''),
+            'failure_history': failure_history
+        }
+    
+    def get_failed_models(self) -> List[str]:
+        """获取所有失败的模型ID列表"""
+        failed = []
+        for model_id, data in self.cache.items():
+            if not data.get('success', False):
+                failed.append(model_id)
+        return failed
+    
+    def get_failure_count(self, model_id: str) -> int:
+        """获取模型的失败次数"""
+        if model_id in self.cache:
+            return self.cache[model_id].get('failure_count', 0)
+        return 0
+    
+    def get_persistent_failures(self, threshold: int = 3) -> List[Dict]:
+        """获取持续失败的模型（失败次数超过阈值）"""
+        persistent = []
+        for model_id, data in self.cache.items():
+            failure_count = data.get('failure_count', 0)
+            if failure_count >= threshold:
+                persistent.append({
+                    'model_id': model_id,
+                    'failure_count': failure_count,
+                    'last_error': data.get('error_code', ''),
+                    'last_failure': data.get('last_failure', '')
+                })
+        return sorted(persistent, key=lambda x: -x['failure_count'])
+    
+    def reset_failure_counts(self):
+        """重置所有失败计数"""
+        for model_id in self.cache:
+            self.cache[model_id]['failure_count'] = 0
+            self.cache[model_id]['failure_history'] = []
+
+
 class ModelTester:
-    def __init__(self, api_key: str, base_url: str, timeout: int = 30):
+    def __init__(self, api_key: str, base_url: str, timeout: int = 30, 
+                 cache_enabled: bool = True, cache_duration: int = 24):
         self.api_key = api_key
         self.base_url = base_url.rstrip('/')
         self.timeout = timeout
@@ -52,6 +173,8 @@ class ModelTester:
             'Authorization': f'Bearer {api_key}',
             'Content-Type': 'application/json'
         }
+        self.cache = ResultCache(cache_duration_hours=cache_duration) if cache_enabled else None
+        self.error_stats = {}  # 错误统计
     
     def get_models(self) -> List[Dict]:
         """获取模型列表"""
@@ -337,6 +460,95 @@ class ModelTester:
         except Exception:
             return False, 0, 'UNKNOWN_ERROR', ''
     
+    def categorize_error(self, error_code: str) -> str:
+        """错误分类"""
+        error_categories = {
+            'HTTP_403': '权限拒绝/未授权',
+            'HTTP_400': '请求参数错误',
+            'HTTP_429': '速率限制',
+            'HTTP_404': '模型不存在',
+            'HTTP_500': '服务器内部错误',
+            'HTTP_503': '服务不可用',
+            'HTTP_554': '服务器错误',
+            'TIMEOUT': '请求超时',
+            'NO_CONTENT': '无响应内容',
+            'REQUEST_FAILED': '请求失败',
+            'CONN_FAILED': '连接失败',
+            'UNKNOWN_ERROR': '未知错误',
+            'SKIPPED': '跳过测试(失败次数过多)'
+        }
+        return error_categories.get(error_code, '其他错误')
+    
+    def update_error_stats(self, error_code: str):
+        """更新错误统计"""
+        if error_code:
+            category = self.categorize_error(error_code)
+            self.error_stats[error_code] = self.error_stats.get(error_code, {
+                'count': 0,
+                'category': category
+            })
+            self.error_stats[error_code]['count'] += 1
+    
+    def print_error_statistics(self, total_models: int, success_count: int):
+        """打印错误统计信息"""
+        if not self.error_stats:
+            return
+        
+        fail_count = total_models - success_count
+        print(f"\n{'='*110}")
+        print("错误统计和分析")
+        print(f"{'='*110}")
+        
+        # 按错误数量排序
+        sorted_errors = sorted(self.error_stats.items(), key=lambda x: -x[1]['count'])
+        
+        print(f"\n{'错误类型':<20} {'错误描述':<25} {'数量':<10} {'占失败比例':<15} {'占总数比例':<15}")
+        print(f"{'-'*110}")
+        
+        for error_code, info in sorted_errors:
+            count = info['count']
+            category = info['category']
+            fail_rate = (count / fail_count * 100) if fail_count > 0 else 0
+            total_rate = (count / total_models * 100) if total_models > 0 else 0
+            print(f"{error_code:<20} {category:<25} {count:<10} {fail_rate:>6.1f}%{' '*8} {total_rate:>6.1f}%")
+        
+        print(f"\n{'总失败数':<20} {' '*25} {fail_count:<10} {100.0:>6.1f}%{' '*8} {(fail_count/total_models*100):>6.1f}%")
+        print(f"{'='*110}\n")
+    
+    def print_failure_statistics(self, threshold: int = 3):
+        """打印持续失败模型统计"""
+        if not self.cache:
+            return
+        
+        persistent = self.cache.get_persistent_failures(threshold)
+        if not persistent:
+            return
+        
+        print(f"\n{'='*110}")
+        print(f"持续失败模型统计 (失败{threshold}次以上)")
+        print(f"{'='*110}")
+        
+        print(f"\n{'模型ID':<50} {'失败次数':<12} {'最后错误':<20} {'最后失败时间':<25}")
+        print(f"{'-'*110}")
+        
+        for item in persistent:
+            model_id = item['model_id']
+            if len(model_id) > 48:
+                model_id = model_id[:45] + '...'
+            
+            last_failure = item['last_failure']
+            try:
+                # 格式化时间显示
+                dt = datetime.fromisoformat(last_failure)
+                last_failure_str = dt.strftime('%Y-%m-%d %H:%M:%S')
+            except:
+                last_failure_str = last_failure[:25] if last_failure else '-'
+            
+            print(f"{model_id:<50} {item['failure_count']:<12} {item['last_error']:<20} {last_failure_str:<25}")
+        
+        print(f"\n总计持续失败模型: {len(persistent)}")
+        print(f"{'='*110}\n")
+    
     def format_row(self, model_name: str, success: bool, response_time: float, 
                    error_code: str, content: str, col_widths: dict) -> str:
         """格式化输出行"""
@@ -436,7 +648,8 @@ class ModelTester:
     
     def test_all_models(self, test_message: str = "hello", output_file: str = None, 
                         test_vision: bool = True, test_audio: bool = True, 
-                        test_embedding: bool = True, test_image_gen: bool = True):
+                        test_embedding: bool = True, test_image_gen: bool = True,
+                        only_failed: bool = False, max_failures: int = 0):
         """
         测试所有模型
         
@@ -447,6 +660,8 @@ class ModelTester:
             test_audio: 是否测试音频模型（需要实际API调用）
             test_embedding: 是否测试Embedding模型（需要实际API调用）
             test_image_gen: 是否测试图像生成模型（需要实际API调用）
+            only_failed: 是否只测试上次失败的模型
+            max_failures: 失败次数阈值，超过此值的模型将被跳过(0表示不限制)
         """
         test_start_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         header_width = 110
@@ -455,16 +670,53 @@ class ModelTester:
         print(f"Base URL: {self.base_url}")
         print(f"测试时间: {test_start_time}")
         print(f"测试配置: 视觉={test_vision}, 音频={test_audio}, 嵌入={test_embedding}, 图像生成={test_image_gen}")
+        
+        # 显示缓存状态
+        if self.cache:
+            cached_models = len(self.cache.cache)
+            valid_cache = sum(1 for m in self.cache.cache.values() if m.get('success', False))
+            cache_hours = int(self.cache.cache_duration.total_seconds() // 3600)
+            print(f"缓存状态: 启用 (有效记录: {valid_cache}/{cached_models}, 有效期: {cache_hours}小时)")
+        else:
+            print(f"缓存状态: 禁用")
+        
         print(f"{'='*header_width}\n")
         
         print("正在获取模型列表...")
-        models = self.get_models()
+        all_models = self.get_models()
         
-        if not models:
+        if not all_models:
             print("[错误] 未获取到任何模型，请检查API配置")
             return
         
-        print(f"共发现 {len(models)} 个模型\n")
+        # 过滤模型列表
+        if only_failed and self.cache:
+            # 只测试上次失败的模型
+            failed_model_ids = set(self.cache.get_failed_models())
+            models = [m for m in all_models if m.get('id', m.get('model', '')) in failed_model_ids]
+            print(f"共发现 {len(all_models)} 个模型，筛选出 {len(models)} 个失败模型进行测试")
+            print(f"测试模式: 仅测试失败模型")
+            
+            # 检查是否有失败模型
+            if len(models) == 0:
+                print("\n[提示] 没有找到失败的模型！")
+                print("可能的原因：")
+                print("  1. 这是首次运行，尚未建立测试记录")
+                print("  2. 所有模型都测试成功了")
+                print("  3. 缓存已被清除")
+                print("\n建议：")
+                print("  - 先运行一次全量测试：python test_models.py --api-key xxx --base-url xxx")
+                print("  - 或者移除 --only-failed 参数")
+                return
+        else:
+            models = all_models
+            print(f"共发现 {len(models)} 个模型")
+            print(f"测试模式: 全量测试")
+        
+        if max_failures > 0:
+            print(f"失败阈值: 跳过失败{max_failures}次以上的模型")
+        
+        print()
         
         # 定义列宽（紧凑模式）
         col_widths = {
@@ -489,35 +741,73 @@ class ModelTester:
         
         success_count = 0
         fail_count = 0
+        cached_count = 0
+        skipped_count = 0
         results = []
         
         # 边测试边输出
         for idx, model in enumerate(models, 1):
             model_id = model.get('id', model.get('model', 'unknown'))
             
-            # 分类模型并使用对应的测试方法
-            model_type = self.classify_model(model_id)
+            # 检查是否超过失败阈值
+            if max_failures > 0 and self.cache:
+                failure_count = self.cache.get_failure_count(model_id)
+                if failure_count >= max_failures:
+                    # 跳过该模型
+                    skipped_count += 1
+                    results.append({
+                        'model': model_id,
+                        'success': False,
+                        'response_time': 0,
+                        'error_code': 'SKIPPED',
+                        'content': f'已跳过(失败{failure_count}次)'
+                    })
+                    # 输出跳过信息
+                    row = self.format_row(model_id, False, 0, 'SKIPPED', 
+                                         f'已跳过(失败{failure_count}次)', col_widths)
+                    print(row)
+                    continue
             
-            if model_type == 'language':
-                success, response_time, error_code, content = self.test_language_model(model_id, test_message)
-            elif model_type == 'vision' and test_vision:
-                success, response_time, error_code, content = self.test_vision_model(model_id)
-            elif model_type == 'audio' and test_audio:
-                success, response_time, error_code, content = self.test_audio_model(model_id)
-            elif model_type == 'embedding' and test_embedding:
-                success, response_time, error_code, content = self.test_embedding_model(model_id)
-            elif model_type == 'image_generation' and test_image_gen:
-                success, response_time, error_code, content = self.test_image_generation_model(model_id)
+            # 检查缓存
+            if self.cache and self.cache.is_cached(model_id):
+                cached_result = self.cache.get_cached_result(model_id)
+                success = cached_result['success']
+                response_time = cached_result['response_time']
+                error_code = cached_result.get('error_code', '')
+                content = f"[缓存] {cached_result['content']}"
+                cached_count += 1
             else:
-                # 跳过或使用基础连通性测试
-                if model_type in ['vision', 'audio', 'embedding', 'image_generation']:
-                    # 如果禁用了该类型的测试，使用简单连通性测试
-                    success, response_time, error_code, content = self.test_connectivity(model_id)
-                    if success:
-                        content = f'[{model_type}模型] {content}'
+                # 分类模型并使用对应的测试方法
+                model_type = self.classify_model(model_id)
+                
+                if model_type == 'language':
+                    success, response_time, error_code, content = self.test_language_model(model_id, test_message)
+                elif model_type == 'vision' and test_vision:
+                    success, response_time, error_code, content = self.test_vision_model(model_id)
+                elif model_type == 'audio' and test_audio:
+                    success, response_time, error_code, content = self.test_audio_model(model_id)
+                elif model_type == 'embedding' and test_embedding:
+                    success, response_time, error_code, content = self.test_embedding_model(model_id)
+                elif model_type == 'image_generation' and test_image_gen:
+                    success, response_time, error_code, content = self.test_image_generation_model(model_id)
                 else:
-                    # 其他类型使用基础连通性测试
-                    success, response_time, error_code, content = self.test_connectivity(model_id)
+                    # 跳过或使用基础连通性测试
+                    if model_type in ['vision', 'audio', 'embedding', 'image_generation']:
+                        # 如果禁用了该类型的测试，使用简单连通性测试
+                        success, response_time, error_code, content = self.test_connectivity(model_id)
+                        if success:
+                            content = f'[{model_type}模型] {content}'
+                    else:
+                        # 其他类型使用基础连通性测试
+                        success, response_time, error_code, content = self.test_connectivity(model_id)
+                
+                # 更新缓存
+                if self.cache:
+                    self.cache.update_cache(model_id, success, response_time, error_code, content)
+            
+            # 更新错误统计（跳过的模型不计入错误统计）
+            if not success and error_code != 'SKIPPED':
+                self.update_error_stats(error_code)
             
             if success:
                 success_count += 1
@@ -539,8 +829,27 @@ class ModelTester:
         
         # 打印统计信息
         print(f"{'='*total_width}")
-        print(f"测试完成 | 总计: {len(models)} | 成功: {success_count} | 失败: {fail_count} | 成功率: {(success_count/len(models)*100):.1f}%")
+        cache_info = f" | 缓存命中: {cached_count}" if cached_count > 0 else ""
+        skip_info = f" | 跳过: {skipped_count}" if skipped_count > 0 else ""
+        success_rate = (success_count/len(models)*100) if len(models) > 0 else 0
+        print(f"测试完成 | 总计: {len(models)} | 成功: {success_count} | 失败: {fail_count}{cache_info}{skip_info} | 成功率: {success_rate:.1f}%")
         print(f"{'='*total_width}\n")
+        
+        # 打印错误统计
+        self.print_error_statistics(len(models), success_count)
+        
+        # 打印持续失败模型统计
+        if self.cache and not only_failed:
+            # 只在全量测试时显示持续失败统计
+            self.print_failure_statistics(threshold=3)
+        
+        # 保存缓存
+        if self.cache:
+            self.cache.save_cache()
+            failed_models = len(self.cache.get_failed_models())
+            persistent_failures = len(self.cache.get_persistent_failures(3))
+            print(f"[信息] 缓存已保存 (共 {len(self.cache.cache)} 条记录)")
+            print(f"[信息] 失败模型: {failed_models} 个，持续失败(≥3次): {persistent_failures} 个\n")
         
         # 保存结果到文件
         if output_file:
@@ -553,9 +862,34 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 示例用法:
+  # 基础测试（全量）
   python test_models.py --api-key sk-xxx --base-url https://api.openai.com
+  
+  # [NEW] 仅测试上次失败的模型
+  python test_models.py --api-key sk-xxx --base-url https://api.openai.com --only-failed
+  
+  # [NEW] 跳过失败5次以上的模型
+  python test_models.py --api-key sk-xxx --base-url https://api.openai.com --max-failures 5
+  
+  # [NEW] 组合使用：只测试失败模型，跳过失败3次以上的
+  python test_models.py --api-key sk-xxx --base-url https://api.openai.com --only-failed --max-failures 3
+  
+  # [NEW] 重置失败计数
+  python test_models.py --api-key sk-xxx --base-url https://api.openai.com --reset-failures
+  
+  # 自定义测试消息
   python test_models.py --api-key sk-xxx --base-url https://api.openai.com --message "你好"
-  python test_models.py --api-key sk-xxx --base-url https://api.openai.com --timeout 60
+  
+  # 禁用缓存
+  python test_models.py --api-key sk-xxx --base-url https://api.openai.com --no-cache
+  
+  # 自定义缓存有效期（48小时）
+  python test_models.py --api-key sk-xxx --base-url https://api.openai.com --cache-duration 48
+  
+  # 清除缓存后重新测试
+  python test_models.py --api-key sk-xxx --base-url https://api.openai.com --clear-cache
+  
+  # 保存结果到文件
   python test_models.py --api-key sk-xxx --base-url https://api.openai.com --output my_results.txt
         """
     )
@@ -616,21 +950,77 @@ def main():
         help='跳过图像生成模型的实际测试（仅连通性测试）'
     )
     
+    parser.add_argument(
+        '--no-cache',
+        action='store_true',
+        help='禁用缓存机制'
+    )
+    
+    parser.add_argument(
+        '--cache-duration',
+        type=int,
+        default=24,
+        help='缓存有效期（小时），默认24小时'
+    )
+    
+    parser.add_argument(
+        '--clear-cache',
+        action='store_true',
+        help='清除缓存文件后开始测试'
+    )
+    
+    parser.add_argument(
+        '--only-failed',
+        action='store_true',
+        help='仅测试上次失败的模型'
+    )
+    
+    parser.add_argument(
+        '--max-failures',
+        type=int,
+        default=0,
+        help='失败次数阈值，超过此值的模型将被跳过(0表示不限制)'
+    )
+    
+    parser.add_argument(
+        '--reset-failures',
+        action='store_true',
+        help='重置所有失败计数'
+    )
+    
     args = parser.parse_args()
+    
+    # 清除缓存
+    if args.clear_cache:
+        cache_file = 'test_cache.json'
+        if os.path.exists(cache_file):
+            os.remove(cache_file)
+            print(f"[信息] 缓存文件已清除\n")
     
     try:
         tester = ModelTester(
             api_key=args.api_key,
             base_url=args.base_url,
-            timeout=args.timeout
+            timeout=args.timeout,
+            cache_enabled=not args.no_cache,
+            cache_duration=args.cache_duration
         )
+        
+        # 重置失败计数
+        if args.reset_failures and tester.cache:
+            tester.cache.reset_failure_counts()
+            tester.cache.save_cache()
+            print(f"[信息] 失败计数已重置\n")
+        
         tester.test_all_models(
             test_message=args.message, 
             output_file=args.output,
             test_vision=not args.skip_vision,
             test_audio=not args.skip_audio,
             test_embedding=not args.skip_embedding,
-            test_image_gen=not args.skip_image_gen
+            test_image_gen=not args.skip_image_gen,
+            only_failed=args.only_failed,
+            max_failures=args.max_failures
         )
     except KeyboardInterrupt:
         print("\n\n测试已取消")

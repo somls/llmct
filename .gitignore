@@ -4,6 +4,11 @@ test_results_*.txt
 *.result.txt
 test_analysis.md
 
+# 缓存文件
+test_cache.json
+test_cache_*.json
+*.cache.json
+
 # Python缓存
 __pycache__/
 *.py[cod]
