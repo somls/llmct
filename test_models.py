@@ -69,14 +69,53 @@ class ModelTester:
             print(f"[错误] 获取模型列表失败: {e}")
             return []
     
-    def is_language_model(self, model_id: str) -> bool:
-        """判断是否为语言模型"""
-        non_language_keywords = [
-            'embedding', 'whisper', 'tts', 'dall-e', 'vision',
-            'image', 'audio', 'speech', 'moderation'
-        ]
+    def classify_model(self, model_id: str) -> str:
+        """
+        分类模型类型
+        返回: 'language', 'vision', 'audio', 'embedding', 'image_generation', 'moderation', 'other'
+        """
         model_lower = model_id.lower()
-        return not any(keyword in model_lower for keyword in non_language_keywords)
+        
+        # 图像生成模型
+        if any(kw in model_lower for kw in ['dall-e', 'flux', 'stable-diffusion', 'dreamshaper', 
+                                              'kolors', 'cogview', 'seedream', 'seedance', 
+                                              'seededit', 't2i', 'i2i', 't2v', 'i2v']):
+            return 'image_generation'
+        
+        # 音频模型（TTS和ASR）
+        if any(kw in model_lower for kw in ['whisper', 'tts', 'speech', 'audio', 'cosyvoice', 
+                                              'fish-speech', 'teletts', 'teleaudio', 'teleasr',
+                                              'sensevoice', 'gpt-sovits', 'rvc']):
+            return 'audio'
+        
+        # Embedding模型
+        if 'embedding' in model_lower or 'bge-m3' in model_lower or 'bge-large' in model_lower:
+            return 'embedding'
+        
+        # Reranker模型
+        if 'reranker' in model_lower:
+            return 'reranker'
+        
+        # Moderation模型
+        if 'moderation' in model_lower:
+            return 'moderation'
+        
+        # 视觉理解模型（多模态对话，支持图像输入）
+        # 注意：某些模型名称包含vision关键词但主要是语言模型，需要明确指定
+        vision_keywords = ['-vl', 'qwen-image', 'internvl', 'qvq', 'glm-4v', 
+                          'llama-vision', 'molmo', 'aria', 'qwen-vl']
+        if any(kw in model_lower for kw in vision_keywords):
+            # 排除纯embedding的vision模型
+            if 'embedding' not in model_lower:
+                return 'vision'
+        
+        # 某些带vision后缀的特定模型
+        if 'vision' in model_lower and any(kw in model_lower for kw in ['preview', 'pro']):
+            if 'embedding' not in model_lower:
+                return 'vision'
+        
+        # 默认为语言模型
+        return 'language'
     
     def test_language_model(self, model_id: str, test_message: str = "hello") -> Tuple[bool, float, str, str]:
         """测试语言模型，返回(是否成功, 响应时间, 错误代码, 响应内容)"""
@@ -119,8 +158,159 @@ class ModelTester:
         except Exception:
             return False, 0, 'UNKNOWN_ERROR', ''
     
+    def test_vision_model(self, model_id: str, test_message: str = "What's in this image?", 
+                          image_url: str = "https://upload.wikimedia.org/wikipedia/commons/thumb/d/dd/Gfp-wisconsin-madison-the-nature-boardwalk.jpg/320px-Gfp-wisconsin-madison-the-nature-boardwalk.jpg") -> Tuple[bool, float, str, str]:
+        """测试视觉模型，返回(是否成功, 响应时间, 错误代码, 响应内容)"""
+        try:
+            url = f"{self.base_url}/v1/chat/completions"
+            payload = {
+                "model": model_id,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": test_message},
+                            {"type": "image_url", "image_url": {"url": image_url}}
+                        ]
+                    }
+                ],
+                "max_tokens": 100
+            }
+            
+            start_time = time.time()
+            response = requests.post(
+                url, 
+                headers=self.headers, 
+                json=payload, 
+                timeout=self.timeout
+            )
+            response_time = time.time() - start_time
+            
+            response.raise_for_status()
+            data = response.json()
+            
+            if 'choices' in data and len(data['choices']) > 0:
+                content = data['choices'][0].get('message', {}).get('content', '')
+                return True, response_time, '', content.strip()
+            else:
+                return False, response_time, 'NO_CONTENT', ''
+                
+        except requests.exceptions.Timeout:
+            return False, self.timeout, 'TIMEOUT', ''
+        except requests.exceptions.HTTPError as e:
+            error_code = f'HTTP_{e.response.status_code}' if hasattr(e, 'response') else 'HTTP_ERROR'
+            return False, 0, error_code, ''
+        except requests.exceptions.RequestException:
+            return False, 0, 'REQUEST_FAILED', ''
+        except Exception:
+            return False, 0, 'UNKNOWN_ERROR', ''
+    
+    def test_audio_model(self, model_id: str) -> Tuple[bool, float, str, str]:
+        """测试音频模型（Whisper/TTS），返回(是否成功, 响应时间, 错误代码, 响应内容)"""
+        # 对于音频模型，使用HEAD请求检查端点是否存在
+        try:
+            # 先尝试ASR端点
+            url = f"{self.base_url}/v1/audio/transcriptions"
+            start_time = time.time()
+            response = requests.options(url, headers=self.headers, timeout=self.timeout)
+            response_time = time.time() - start_time
+            
+            if response.status_code in [200, 405]:  # 405表示方法不允许，但端点存在
+                return True, response_time, '', '音频端点可用'
+            else:
+                # 尝试TTS端点
+                url = f"{self.base_url}/v1/audio/speech"
+                response = requests.options(url, headers=self.headers, timeout=self.timeout)
+                if response.status_code in [200, 405]:
+                    return True, response_time, '', 'TTS端点可用'
+                return False, response_time, f'HTTP_{response.status_code}', ''
+        except requests.exceptions.Timeout:
+            return False, self.timeout, 'TIMEOUT', ''
+        except requests.exceptions.HTTPError as e:
+            error_code = f'HTTP_{e.response.status_code}' if hasattr(e, 'response') else 'HTTP_ERROR'
+            return False, 0, error_code, ''
+        except requests.exceptions.RequestException:
+            return False, 0, 'CONN_FAILED', ''
+        except Exception:
+            return False, 0, 'UNKNOWN_ERROR', ''
+    
+    def test_embedding_model(self, model_id: str, test_text: str = "hello world") -> Tuple[bool, float, str, str]:
+        """测试Embedding模型，返回(是否成功, 响应时间, 错误代码, 响应内容)"""
+        try:
+            url = f"{self.base_url}/v1/embeddings"
+            payload = {
+                "model": model_id,
+                "input": test_text
+            }
+            
+            start_time = time.time()
+            response = requests.post(
+                url, 
+                headers=self.headers, 
+                json=payload, 
+                timeout=self.timeout
+            )
+            response_time = time.time() - start_time
+            
+            response.raise_for_status()
+            data = response.json()
+            
+            if 'data' in data and len(data['data']) > 0:
+                embedding_dim = len(data['data'][0].get('embedding', []))
+                return True, response_time, '', f'Embedding维度:{embedding_dim}'
+            else:
+                return False, response_time, 'NO_DATA', ''
+                
+        except requests.exceptions.Timeout:
+            return False, self.timeout, 'TIMEOUT', ''
+        except requests.exceptions.HTTPError as e:
+            error_code = f'HTTP_{e.response.status_code}' if hasattr(e, 'response') else 'HTTP_ERROR'
+            return False, 0, error_code, ''
+        except requests.exceptions.RequestException:
+            return False, 0, 'REQUEST_FAILED', ''
+        except Exception:
+            return False, 0, 'UNKNOWN_ERROR', ''
+    
+    def test_image_generation_model(self, model_id: str, prompt: str = "a white cat") -> Tuple[bool, float, str, str]:
+        """测试图像生成模型，返回(是否成功, 响应时间, 错误代码, 响应内容)"""
+        try:
+            url = f"{self.base_url}/v1/images/generations"
+            payload = {
+                "model": model_id,
+                "prompt": prompt,
+                "n": 1,
+                "size": "256x256"
+            }
+            
+            start_time = time.time()
+            response = requests.post(
+                url, 
+                headers=self.headers, 
+                json=payload, 
+                timeout=self.timeout
+            )
+            response_time = time.time() - start_time
+            
+            response.raise_for_status()
+            data = response.json()
+            
+            if 'data' in data and len(data['data']) > 0:
+                return True, response_time, '', '图像生成成功'
+            else:
+                return False, response_time, 'NO_DATA', ''
+                
+        except requests.exceptions.Timeout:
+            return False, self.timeout, 'TIMEOUT', ''
+        except requests.exceptions.HTTPError as e:
+            error_code = f'HTTP_{e.response.status_code}' if hasattr(e, 'response') else 'HTTP_ERROR'
+            return False, 0, error_code, ''
+        except requests.exceptions.RequestException:
+            return False, 0, 'REQUEST_FAILED', ''
+        except Exception:
+            return False, 0, 'UNKNOWN_ERROR', ''
+    
     def test_connectivity(self, model_id: str) -> Tuple[bool, float, str, str]:
-        """测试非语言模型的连通性，返回(是否成功, 响应时间, 错误代码, 响应内容)"""
+        """测试基础连通性，返回(是否成功, 响应时间, 错误代码, 响应内容)"""
         try:
             url = f"{self.base_url}/v1/models/{model_id}"
             
@@ -244,14 +434,27 @@ class ModelTester:
         except Exception as e:
             print(f"[警告] 保存结果失败: {e}")
     
-    def test_all_models(self, test_message: str = "hello", output_file: str = None):
-        """测试所有模型"""
+    def test_all_models(self, test_message: str = "hello", output_file: str = None, 
+                        test_vision: bool = True, test_audio: bool = True, 
+                        test_embedding: bool = True, test_image_gen: bool = True):
+        """
+        测试所有模型
+        
+        Args:
+            test_message: 用于语言模型的测试消息
+            output_file: 结果输出文件路径
+            test_vision: 是否测试视觉模型（需要实际API调用）
+            test_audio: 是否测试音频模型（需要实际API调用）
+            test_embedding: 是否测试Embedding模型（需要实际API调用）
+            test_image_gen: 是否测试图像生成模型（需要实际API调用）
+        """
         test_start_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        header_width = 110  # 紧凑模式的总宽度
+        header_width = 110
         print(f"\n{'='*header_width}")
-        print(f"大模型连通性和可用性测试")
+        print(f"大模型连通性和可用性测试 [增强版]")
         print(f"Base URL: {self.base_url}")
         print(f"测试时间: {test_start_time}")
+        print(f"测试配置: 视觉={test_vision}, 音频={test_audio}, 嵌入={test_embedding}, 图像生成={test_image_gen}")
         print(f"{'='*header_width}\n")
         
         print("正在获取模型列表...")
@@ -292,12 +495,29 @@ class ModelTester:
         for idx, model in enumerate(models, 1):
             model_id = model.get('id', model.get('model', 'unknown'))
             
-            is_language = self.is_language_model(model_id)
+            # 分类模型并使用对应的测试方法
+            model_type = self.classify_model(model_id)
             
-            if is_language:
+            if model_type == 'language':
                 success, response_time, error_code, content = self.test_language_model(model_id, test_message)
+            elif model_type == 'vision' and test_vision:
+                success, response_time, error_code, content = self.test_vision_model(model_id)
+            elif model_type == 'audio' and test_audio:
+                success, response_time, error_code, content = self.test_audio_model(model_id)
+            elif model_type == 'embedding' and test_embedding:
+                success, response_time, error_code, content = self.test_embedding_model(model_id)
+            elif model_type == 'image_generation' and test_image_gen:
+                success, response_time, error_code, content = self.test_image_generation_model(model_id)
             else:
-                success, response_time, error_code, content = self.test_connectivity(model_id)
+                # 跳过或使用基础连通性测试
+                if model_type in ['vision', 'audio', 'embedding', 'image_generation']:
+                    # 如果禁用了该类型的测试，使用简单连通性测试
+                    success, response_time, error_code, content = self.test_connectivity(model_id)
+                    if success:
+                        content = f'[{model_type}模型] {content}'
+                else:
+                    # 其他类型使用基础连通性测试
+                    success, response_time, error_code, content = self.test_connectivity(model_id)
             
             if success:
                 success_count += 1
@@ -372,6 +592,30 @@ def main():
         help='测试结果输出文件路径 (默认: test_results.txt)'
     )
     
+    parser.add_argument(
+        '--skip-vision',
+        action='store_true',
+        help='跳过视觉模型的实际测试（仅连通性测试）'
+    )
+    
+    parser.add_argument(
+        '--skip-audio',
+        action='store_true',
+        help='跳过音频模型的实际测试（仅连通性测试）'
+    )
+    
+    parser.add_argument(
+        '--skip-embedding',
+        action='store_true',
+        help='跳过Embedding模型的实际测试（仅连通性测试）'
+    )
+    
+    parser.add_argument(
+        '--skip-image-gen',
+        action='store_true',
+        help='跳过图像生成模型的实际测试（仅连通性测试）'
+    )
+    
     args = parser.parse_args()
     
     try:
@@ -380,7 +624,14 @@ def main():
             base_url=args.base_url,
             timeout=args.timeout
         )
-        tester.test_all_models(test_message=args.message, output_file=args.output)
+        tester.test_all_models(
+            test_message=args.message, 
+            output_file=args.output,
+            test_vision=not args.skip_vision,
+            test_audio=not args.skip_audio,
+            test_embedding=not args.skip_embedding,
+            test_image_gen=not args.skip_image_gen
+        )
     except KeyboardInterrupt:
         print("\n\n测试已取消")
         sys.exit(0)
