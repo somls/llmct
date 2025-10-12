@@ -171,9 +171,9 @@ class ModelTester:
                         except ValueError:
                             pass
                     
-                    print(f"  [速率限制] 收到429错误，等待{wait_time}秒后重试 (第{attempt + 1}次重试)...", end='', flush=True)
+                    logger.warning(f"速率限制: 收到429错误，等待{wait_time}秒后重试 (第{attempt + 1}次重试)")
                     time.sleep(wait_time)
-                    print(" 继续")
+                    logger.info("重试继续")
                     continue
                 
                 # 其他错误或成功，直接返回
@@ -204,6 +204,7 @@ class ModelTester:
         # 先验证API凭证
         valid, msg = self.validate_api_credentials()
         if not valid:
+            logger.error(f"API凭证验证失败: {msg}")
             print(f"\n{'='*110}")
             print(f"[严重错误] {msg}")
             print(f"{'='*110}")
@@ -217,6 +218,7 @@ class ModelTester:
             print(f"{'='*110}\n")
             sys.exit(1)
         
+        logger.info(msg)
         print(f"[信息] {msg}\n")
         
         try:
@@ -230,6 +232,7 @@ class ModelTester:
             else:
                 return []
         except Exception as e:
+            logger.error(f"获取模型列表失败: {e}")
             print(f"[错误] 获取模型列表失败: {e}")
             return []
     
@@ -587,64 +590,41 @@ class ModelTester:
         return row
     
     def save_results(self, results: List[Dict], output_file: str, test_start_time: str):
-        """保存测试结果到文件"""
+        """保存测试结果到文件（使用Reporter）"""
         try:
-            with open(output_file, 'w', encoding='utf-8') as f:
-                # 写入文件头
-                f.write("="*110 + "\n")
-                f.write("大模型连通性和可用性测试结果\n")
-                f.write(f"Base URL: {self.base_url}\n")
-                f.write(f"测试时间: {test_start_time}\n")
-                f.write("="*110 + "\n\n")
-                
-                # 定义列宽
-                col_widths = {
-                    'model': 45,
-                    'time': 9,
-                    'error': 12,
-                    'content': 40
-                }
-                
-                total_width = sum(col_widths.values()) + 6
-                
-                # 写入表头
-                f.write("="*total_width + "\n")
-                header = (
-                    f"{pad_string('模型名称', col_widths['model'], 'left')} | "
-                    f"{pad_string('响应时间', col_widths['time'], 'center')} | "
-                    f"{pad_string('错误信息', col_widths['error'], 'center')} | "
-                    f"{pad_string('响应内容', col_widths['content'], 'left')}"
-                )
-                f.write(header + "\n")
-                f.write("-"*total_width + "\n")
-                
-                # 写入测试结果
-                success_count = 0
-                fail_count = 0
-                for result in results:
-                    if result['success']:
-                        success_count += 1
-                    else:
-                        fail_count += 1
-                    
-                    row = self.format_row(
-                        result['model'],
-                        result['success'],
-                        result['response_time'],
-                        result['error_code'],
-                        result['content'],
-                        col_widths
-                    )
-                    f.write(row + "\n")
-                
-                # 写入统计信息
-                f.write("="*total_width + "\n")
-                success_rate = (success_count/len(results)*100) if results else 0
-                f.write(f"测试完成 | 总计: {len(results)} | 成功: {success_count} | 失败: {fail_count} | 成功率: {success_rate:.1f}%\n")
-                f.write("="*total_width + "\n")
-                
+            # 确定输出格式
+            if output_file.endswith('.json'):
+                format_type = 'json'
+            elif output_file.endswith('.csv'):
+                format_type = 'csv'
+            elif output_file.endswith('.html'):
+                format_type = 'html'
+            else:
+                format_type = 'txt'
+            
+            # 准备元数据
+            success_count = sum(1 for r in results if r['success'])
+            fail_count = len(results) - success_count
+            success_rate = (success_count / len(results) * 100) if results else 0
+            
+            metadata = {
+                'base_url': self.base_url,
+                'test_start_time': test_start_time,
+                'test_end_time': datetime.now().isoformat(),
+                'total': len(results),
+                'success': success_count,
+                'failed': fail_count,
+                'success_rate': success_rate
+            }
+            
+            # 使用Reporter生成报告
+            reporter = Reporter(results)
+            reporter.save(output_file, format=format_type, metadata=metadata)
+            
+            logger.info(f"测试结果已保存到: {output_file} (格式: {format_type})")
             print(f"[信息] 测试结果已保存到: {output_file}")
         except Exception as e:
+            logger.warning(f"保存结果失败: {e}")
             print(f"[警告] 保存结果失败: {e}")
     
     def test_all_models(self, test_message: str = "hello", output_file: str = None, 
@@ -853,7 +833,9 @@ class ModelTester:
             self.cache.save_cache()
             failed_models = len(self.cache.get_failed_models())
             persistent_failures = len(self.cache.get_persistent_failures(3))
-            print(f"[信息] 缓存已保存 (共 {len(self.cache.cache)} 条记录)")
+            logger.info(f"缓存已保存: {len(self.cache.get_stats()['total'])} 条记录")
+            logger.info(f"失败模型: {failed_models} 个，持续失败(≥3次): {persistent_failures} 个")
+            print(f"[信息] 缓存已保存 (共 {len(self.cache.get_stats()['total'])} 条记录)")
             print(f"[信息] 失败模型: {failed_models} 个，持续失败(≥3次): {persistent_failures} 个\n")
         
         # 保存结果到文件
