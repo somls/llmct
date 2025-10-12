@@ -1,4 +1,4 @@
-# 📚 文档索引
+# 📚 文档索引 (v2.3.0 精简版)
 
 > 完整的LLMCT文档导航
 
@@ -8,33 +8,51 @@
 
 ### 新用户必读
 1. **[README.md](README.md)** ⭐⭐⭐⭐⭐  
-   项目介绍、安装、快速开始、核心功能
+   项目介绍、安装、快速开始、核心功能（精简版）
 
 2. **[docs/USAGE.md](docs/USAGE.md)** ⭐⭐⭐⭐⭐  
-   完整使用指南、参数说明、最佳实践
+   完整使用指南、自动分析报告、最佳实践
+
+3. **[PROJECT_SIMPLIFICATION.md](PROJECT_SIMPLIFICATION.md)** ⭐⭐⭐  
+   v2.3.0精简说明、新功能介绍、迁移指南
 
 ---
 
 ## 📖 核心文档
 
 ### 功能说明
-- **[docs/USAGE.md](docs/USAGE.md)** - 详细使用教程  
-  *内容：* 参数说明、使用场景、最佳实践、高级技巧  
+- **[docs/USAGE.md](docs/USAGE.md)** - 详细使用教程（v2.3更新）  
+  *内容：* 参数说明、自动分析报告、健康度评分、告警系统  
   *适合：* 所有用户
 
-- **[docs/FAILURE_TRACKING.md](docs/FAILURE_TRACKING.md)** - 失败追踪机制  
-  *内容：* 失败追踪原理、使用方法、性能对比  
-  *适合：* 想优化测试效率的用户
+### v2.3.0 新功能
+- **[PROJECT_SIMPLIFICATION.md](PROJECT_SIMPLIFICATION.md)** ⭐  
+  *内容：* 精简说明、移除功能列表、新增自动分析报告、迁移建议  
+  *适合：* 从旧版本升级的用户  
+  *版本：* v2.3.0
 
-- **[docs/ERRORS.md](docs/ERRORS.md)** - 错误说明  
-  *内容：* 13种错误类型、原因分析、解决方案  
-  *适合：* 遇到测试错误的用户
+### 历史文档（参考）
+- **[FINAL_TEST_ANALYSIS.md](FINAL_TEST_ANALYSIS.md)**  
+  *内容：* 真实API测试结果（v2.2.x版本）  
+  *适合：* 历史参考  
+  *注意：* 部分功能已在v2.3.0中移除
 
-### 性能优化
-- **[docs/OPTIMIZATION.md](docs/OPTIMIZATION.md)** ⭐ NEW  
-  *内容：* 优化功能说明、使用指南、性能对比、故障排查  
-  *适合：* 需要高性能测试的用户  
-  *版本：* v2.1.0+
+### 重构文档 (v2.2.1-v2.3.0) 🏗️
+- **[REFACTORING_GUIDE.md](REFACTORING_GUIDE.md)** - 重构指南（v2.2.x）  
+  *内容：* 详细重构步骤、代码示例、测试验证  
+  *适合：* 想了解重构过程的开发者
+
+- **[REFACTORING_COMPLETE.md](REFACTORING_COMPLETE.md)** - Phase 1报告  
+  *内容：* 核心重构成果、性能提升数据  
+  *适合：* 了解重构第一阶段成果
+
+- **[REFACTORING_PHASE2.md](REFACTORING_PHASE2.md)** - Phase 2报告  
+  *内容：* 功能增强、日志集成、Reporter优化  
+  *适合：* 了解重构第二阶段成果
+
+- **[OPTIMIZATION_SUMMARY.md](OPTIMIZATION_SUMMARY.md)** - 优化执行摘要  
+  *内容：* 核心问题、关键指标、实施路线  
+  *适合：* 快速了解优化全貌
 
 ### 版本升级
 - **[docs/UPGRADE.md](docs/UPGRADE.md)** - 升级指南  
@@ -54,38 +72,43 @@
 #### 🎯 开始使用
 👉 阅读 [README.md](README.md) → [docs/USAGE.md](docs/USAGE.md)
 
-#### 🚀 提升性能
-👉 阅读 [docs/OPTIMIZATION.md](docs/OPTIMIZATION.md)
+#### 📊 使用分析报告
+👉 阅读 [docs/USAGE.md](docs/USAGE.md) - 健康度评分和告警系统
 
-#### ❌ 解决错误
-👉 查看 [docs/ERRORS.md](docs/ERRORS.md)
-
-#### 📈 优化测试策略
-👉 阅读 [docs/FAILURE_TRACKING.md](docs/FAILURE_TRACKING.md)
-
-#### 🔄 版本升级
-👉 查看 [docs/UPGRADE.md](docs/UPGRADE.md) + [CHANGELOG.md](CHANGELOG.md)
+#### 🔄 从v2.2升级到v2.3
+👉 查看 [PROJECT_SIMPLIFICATION.md](PROJECT_SIMPLIFICATION.md) + [CHANGELOG.md](CHANGELOG.md)
 
 #### 💻 代码集成
 👉 查看 [examples/](examples/) 目录
+
+#### 📜 版本历史
+👉 查看 [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
 ## 📂 文档结构
 
 ```
-LLMCT/
-├── README.md                    # 项目主页
+LLMCT/ (v2.3.0 精简版)
+├── README.md                    # 项目主页（精简版）
 ├── CHANGELOG.md                 # 版本历史
 ├── DOCS_INDEX.md               # 本文档
+├── PROJECT_SIMPLIFICATION.md   # v2.3.0精简说明 [NEW]
+├── FINAL_TEST_ANALYSIS.md      # 实测分析报告 [v2.2.x历史参考]
+├── REFACTORING_GUIDE.md        # 重构指南 [v2.2.1]
+├── REFACTORING_COMPLETE.md     # Phase 1报告 [v2.2.1]
+├── REFACTORING_PHASE2.md       # Phase 2报告 [v2.2.1]
+├── OPTIMIZATION_SUMMARY.md     # 优化执行摘要 [v2.2.1]
+├── mct.py                       # 主程序（精简版，含自动分析报告）
 ├── docs/                        # 详细文档
-│   ├── USAGE.md                # 使用指南
-│   ├── OPTIMIZATION.md         # 优化指南 [NEW]
-│   ├── UPGRADE.md              # 升级指南
-│   ├── ERRORS.md               # 错误说明
-│   └── FAILURE_TRACKING.md     # 失败追踪
+│   ├── USAGE.md                # 使用指南（v2.3更新）
+│   └── UPGRADE.md              # 升级指南
 ├── examples/                    # 代码示例
-│   └── example_usage.py        # 使用示例
+│   └── example_usage.py        # 使用示例（v2.3更新）
+├── llmct/                       # 核心模块
+│   ├── core/                   # 核心功能（analyzer, reporter, classifier）
+│   ├── utils/                  # 工具模块（logger, config, retry）
+│   └── models/                 # 数据模型
 └── tests/                       # 单元测试
     └── ...
 ```
@@ -94,39 +117,30 @@ LLMCT/
 
 ## 📘 推荐阅读路径
 
-### 路径 1: 新手入门
-1. [README.md](README.md) - 5分钟了解项目
-2. [docs/USAGE.md](docs/USAGE.md) - 15分钟掌握基础
-3. [docs/FAILURE_TRACKING.md](docs/FAILURE_TRACKING.md) - 10分钟学习核心功能
+### 路径 1: 新手入门（v2.3）
+1. [README.md](README.md) - 5分钟了解精简版
+2. [docs/USAGE.md](docs/USAGE.md) - 15分钟掌握基础和分析报告
+3. [examples/example_usage.py](examples/example_usage.py) - 5分钟查看代码示例
 
-**总计：** 30分钟快速上手
-
----
-
-### 路径 2: 性能优化
-1. [docs/OPTIMIZATION.md](docs/OPTIMIZATION.md) - 20分钟了解优化功能
-2. [docs/USAGE.md](docs/USAGE.md) - 参考高级用法
-3. [CHANGELOG.md](CHANGELOG.md) - 查看优化细节
-
-**总计：** 30分钟掌握性能优化
+**总计：** 25分钟快速上手
 
 ---
 
-### 路径 3: 问题解决
-1. [docs/ERRORS.md](docs/ERRORS.md) - 查找错误解决方案
-2. [docs/FAILURE_TRACKING.md](docs/FAILURE_TRACKING.md) - 理解失败机制
-3. [docs/USAGE.md](docs/USAGE.md) - 参考使用场景
+### 路径 2: 自动分析报告
+1. [docs/USAGE.md](docs/USAGE.md) - 15分钟了解健康度评分和告警
+2. [PROJECT_SIMPLIFICATION.md](PROJECT_SIMPLIFICATION.md) - 5分钟了解新功能
+3. 运行实际测试查看报告
 
-**总计：** 15分钟解决问题
+**总计：** 20分钟掌握分析功能
 
 ---
 
-### 路径 4: 版本升级
-1. [CHANGELOG.md](CHANGELOG.md) - 查看版本变更
-2. [docs/UPGRADE.md](docs/UPGRADE.md) - 按步骤升级
-3. [docs/OPTIMIZATION.md](docs/OPTIMIZATION.md) - 了解新功能
+### 路径 3: 版本升级（v2.2→v2.3）
+1. [PROJECT_SIMPLIFICATION.md](PROJECT_SIMPLIFICATION.md) - 10分钟了解变化
+2. [CHANGELOG.md](CHANGELOG.md) - 5分钟查看详细变更
+3. [docs/USAGE.md](docs/USAGE.md) - 参考新用法
 
-**总计：** 20分钟完成升级
+**总计：** 15分钟完成升级
 
 ---
 
@@ -145,15 +159,21 @@ LLMCT/
 
 ---
 
-## 📊 文档统计
+## 📊 文档统计（v2.3.0）
 
 | 类型 | 数量 | 说明 |
 |------|------|------|
-| 主文档 | 2个 | README + CHANGELOG |
-| 详细文档 | 5个 | docs/目录 |
+| 主文档 | 4个 | README + CHANGELOG + DOCS_INDEX + SIMPLIFICATION |
+| 功能文档 | 2个 | docs/目录（精简） |
+| 历史文档 | 5个 | 重构和测试分析文档（参考） |
 | 代码示例 | 1个 | examples/目录 |
-| 测试脚本 | 2个 | 测试相关 |
-| **总计** | **10个** | **完整文档体系** |
+| 测试脚本 | 多个 | tests/目录 |
+| **总计** | **12+个** | **精简文档体系** |
+
+**v2.3.0变化：**
+- ❌ 移除：缓存、失败追踪、优化指南文档
+- ✅ 新增：PROJECT_SIMPLIFICATION.md
+- ✅ 更新：README.md, docs/USAGE.md, CHANGELOG.md
 
 ---
 
@@ -176,17 +196,14 @@ ls -la docs/
 
 ### 运行示例
 ```bash
-# 功能示例
+# 功能示例（v2.3更新）
 python examples/example_usage.py
-
-# 优化测试
-python scripts/test_optimizations.py
 
 # 快速测试
 python scripts/quick_test.py --api-key YOUR_KEY --base-url YOUR_URL
 
-# 性能基准测试
-python scripts/benchmark_performance.py
+# 主程序测试
+python mct.py --api-key YOUR_KEY --base-url YOUR_URL --output results.json
 
 # 单元测试
 pytest tests/ -v
@@ -236,6 +253,7 @@ pytest tests/ -v
 
 ---
 
-**最后更新:** 2025-01-16  
-**文档数量:** 8个  
+**最后更新:** 2025-10-12  
+**版本:** v2.3.0（精简版）  
+**文档数量:** 12个  
 **维护状态:** ✅ 活跃

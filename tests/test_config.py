@@ -5,13 +5,13 @@ from llmct.utils.config import Config
 
 
 def test_default_config():
-    """测试默认配置"""
+    """测试默认配置（v2.3精简版）"""
     config = Config()
     
     assert config.get('api.timeout') == 30
     assert config.get('testing.message') == 'hello'
-    assert config.get('cache.enabled') is True
-    assert config.get('cache.duration_hours') == 24
+    assert config.get('output.format') == 'txt'
+    assert config.get('performance.retry_times') == 3
 
 
 def test_load_from_file(temp_config_file):
@@ -44,7 +44,7 @@ def test_set_config():
 
 
 def test_override_from_args():
-    """测试从命令行参数覆盖配置"""
+    """测试从命令行参数覆盖配置（v2.3精简版）"""
     config = Config()
     
     class Args:
@@ -57,18 +57,13 @@ def test_override_from_args():
         skip_audio = False
         skip_embedding = False
         skip_image_gen = False
-        only_failed = True
-        max_failures = 5
-        no_cache = True
-        cache_duration = 48
     
     args = Args()
     config.override_from_args(args)
     
     assert config.get('api.key') == 'override-key'
-    assert config.get('testing.only_failed') is True
-    assert config.get('testing.max_failures') == 5
-    assert config.get('cache.enabled') is False
+    assert config.get('api.base_url') == 'https://override.com'
+    assert config.get('testing.skip_vision') is True
 
 
 def test_to_dict():

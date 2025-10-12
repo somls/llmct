@@ -36,24 +36,30 @@ class Reporter:
     
     def save_txt(self, results: List[Dict], output_file: str):
         """保存为TXT格式（表格格式）"""
-        from mct import display_width, pad_string
+        from llmct.utils import display_width, pad_string
+        from llmct.constants import (
+            COL_WIDTH_MODEL, COL_WIDTH_TIME, COL_WIDTH_ERROR, COL_WIDTH_CONTENT,
+            TABLE_WIDTH
+        )
         
         col_widths = {
-            'model': 45,
-            'time': 9,
-            'error': 12,
-            'content': 40
+            'model': COL_WIDTH_MODEL,
+            'time': COL_WIDTH_TIME,
+            'error': COL_WIDTH_ERROR,
+            'content': COL_WIDTH_CONTENT
         }
         
-        total_width = sum(col_widths.values()) + 6
+        total_width = TABLE_WIDTH
+        
+        from llmct.constants import SEPARATOR_WIDTH
         
         with open(output_file, 'w', encoding='utf-8') as f:
             # 写入文件头
-            f.write("="*110 + "\n")
+            f.write("="*SEPARATOR_WIDTH + "\n")
             f.write("大模型连通性和可用性测试结果\n")
             f.write(f"Base URL: {self.base_url}\n")
             f.write(f"测试时间: {self.test_time}\n")
-            f.write("="*110 + "\n\n")
+            f.write("="*SEPARATOR_WIDTH + "\n\n")
             
             # 写入表头
             f.write("="*total_width + "\n")

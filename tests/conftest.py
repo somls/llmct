@@ -22,23 +22,9 @@ api:
 testing:
   message: "hello"
   skip_vision: false
-  only_failed: false
-  max_failures: 0
-
-cache:
-  enabled: true
-  duration_hours: 24
-  file: test_cache.json
 """
     config_file.write_text(config_content, encoding='utf-8')
     return str(config_file)
-
-
-@pytest.fixture
-def temp_cache_file(tmp_path):
-    """创建临时缓存文件"""
-    cache_file = tmp_path / "test_cache.json"
-    return str(cache_file)
 
 
 @pytest.fixture

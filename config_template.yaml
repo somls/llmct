@@ -1,4 +1,4 @@
-# 大模型连通性测试工具 - 配置文件
+# 大模型连通性测试工具 - 配置文件（精简版）
 
 # API配置
 api:
@@ -13,14 +13,6 @@ testing:
   skip_audio: false  # 跳过音频模型测试
   skip_embedding: false  # 跳过嵌入模型测试
   skip_image_gen: false  # 跳过图像生成测试
-  only_failed: false  # 仅测试失败模型
-  max_failures: 0  # 失败次数阈值（0=不限制）
-
-# 缓存配置
-cache:
-  enabled: true  # 是否启用缓存
-  duration_hours: 24  # 缓存有效期（小时）
-  file: test_cache.json  # 缓存文件路径
 
 # 输出配置
 output:
@@ -33,6 +25,7 @@ performance:
   rate_limit_rpm: 60  # 速率限制（每分钟请求数）
   retry_times: 3  # 重试次数
   retry_delay: 5  # 重试延迟（秒）
+  request_delay: 1.0  # 请求之间的延迟（秒），避免速率限制
 
 # 日志配置
 logging:

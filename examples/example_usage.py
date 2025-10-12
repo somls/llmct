@@ -1,5 +1,13 @@
 """
-v2.0 新功能使用示例
+v2.3 精简版使用示例
+
+注意：本示例基于v2.0-v2.2版本，部分功能在v2.3.0（精简版）中已移除：
+- 移除：缓存相关功能（example_1中的cache配置）
+- 移除：速率限制器（example_5）
+- 保留：分类器、日志、重试、报告、分析器等核心功能
+
+v2.3.0 新增功能：
+- 自动分析报告（健康度评分、告警系统）
 """
 
 import sys
@@ -11,9 +19,9 @@ sys.path.insert(0, str(project_root))
 
 
 def example_1_config_usage():
-    """示例1：使用配置文件"""
+    """示例1：使用配置文件（v2.3精简版）"""
     print("\n" + "="*60)
-    print("示例1：配置文件使用")
+    print("示例1：配置文件使用（精简版）")
     print("="*60)
     
     from llmct.utils.config import Config
@@ -26,12 +34,12 @@ def example_1_config_usage():
     
     # 获取配置值
     print(f"API超时: {config.get('api.timeout')}秒")
-    print(f"缓存启用: {config.get('cache.enabled')}")
-    print(f"并发数: {config.get('performance.concurrent')}")
+    print(f"输出格式: {config.get('output.format')}")
+    print(f"重试次数: {config.get('performance.retry_times')}")
     
     # 设置配置值
-    config.set('testing.only_failed', True)
-    print(f"只测试失败模型: {config.get('testing.only_failed')}")
+    config.set('testing.skip_vision', True)
+    print(f"跳过视觉模型: {config.get('testing.skip_vision')}")
 
 
 def example_2_logger():
@@ -116,25 +124,34 @@ def example_4_classifier():
         print(f"  {model_type}: {count}")
 
 
-def example_5_rate_limiter():
-    """示例5：速率限制器"""
+def example_5_auto_analysis():
+    """示例5：自动分析报告（v2.3新增）"""
     print("\n" + "="*60)
-    print("示例5：速率限制器")
+    print("示例5：自动分析报告")
     print("="*60)
     
-    import time
-    from llmct.utils.rate_limiter import RateLimiter
+    from llmct.core.analyzer import ResultAnalyzer
     
-    # 创建限制器：每5秒最多3次调用
-    limiter = RateLimiter(max_calls=3, period=5.0)
+    # 模拟测试结果
+    sample_results = [
+        {'model': 'gpt-4o', 'success': True, 'response_time': 1.2, 'error_code': '', 'content': 'OK'},
+        {'model': 'gpt-3.5', 'success': True, 'response_time': 0.8, 'error_code': '', 'content': 'OK'},
+        {'model': 'model-1', 'success': False, 'response_time': 0, 'error_code': 'HTTP_503', 'content': ''},
+        {'model': 'model-2', 'success': False, 'response_time': 0, 'error_code': 'HTTP_503', 'content': ''},
+        {'model': 'gpt-4', 'success': True, 'response_time': 1.5, 'error_code': '', 'content': 'OK'},
+    ]
     
-    print("尝试连续调用5次（每5秒限制3次）:")
-    for i in range(5):
-        limiter.wait_if_needed()
-        print(f"  调用 {i+1} at {time.time():.2f}")
+    analyzer = ResultAnalyzer()
     
-    remaining = limiter.get_remaining_calls()
-    print(f"\n剩余可用调用次数: {remaining}")
+    # 健康度评分
+    health = analyzer.calculate_health_score(sample_results)
+    print(f"\nAPI健康度评分: {health['score']}/100 (等级: {health['grade']})")
+    print(f"  - 成功率: {health['details']['success_rate']}%")
+    print(f"  - 平均响应时间: {health['details']['avg_response_time']:.2f}秒")
+    
+    # 告警检查
+    alerts = analyzer.check_alerts(sample_results)
+    print(f"\n告警数量: {len(alerts)}")
 
 
 def example_6_reporter():
@@ -205,7 +222,7 @@ def example_7_analyzer():
 def main():
     """运行所有示例"""
     print("\n" + "="*60)
-    print("LLMCT v2.0 新功能示例")
+    print("LLMCT v2.3 精简版功能示例")
     print("="*60)
     
     try:
@@ -213,13 +230,18 @@ def main():
         example_2_logger()
         example_3_retry()
         example_4_classifier()
-        example_5_rate_limiter()
+        example_5_auto_analysis()  # v2.3新增
         example_6_reporter()
         example_7_analyzer()
         
         print("\n" + "="*60)
         print("[SUCCESS] 所有示例运行完成！")
         print("="*60)
+        print("\nv2.3.0 精简版特性：")
+        print("  - 移除缓存功能，专注实时测试")
+        print("  - 新增自动分析报告（健康度评分+告警）")
+        print("  - 简化命令行参数")
+        print("  - 保留核心分析功能")
         
     except Exception as e:
         print(f"\n[ERROR] 运行示例时出错: {e}")
