@@ -1,0 +1,42 @@
+{
+  "metadata": {
+    "test_time": "2025-10-11 23:50:14",
+    "base_url": "https://api.test.com",
+    "total": 3,
+    "success": 2,
+    "failed": 1,
+    "success_rate": 66.66666666666666
+  },
+  "results": [
+    {
+      "model": "gpt-4o",
+      "success": true,
+      "response_time": 1.2,
+      "error_code": "",
+      "content": "Hello!"
+    },
+    {
+      "model": "gpt-3.5",
+      "success": true,
+      "response_time": 0.8,
+      "error_code": "",
+      "content": "Hi there!"
+    },
+    {
+      "model": "test-model",
+      "success": false,
+      "response_time": 0,
+      "error_code": "HTTP_403",
+      "content": ""
+    }
+  ],
+  "statistics": {
+    "success_count": 2,
+    "fail_count": 1,
+    "success_rate": 66.66666666666666,
+    "avg_response_time": 1.0,
+    "error_breakdown": {
+      "HTTP_403": 1
+    }
+  }
+}

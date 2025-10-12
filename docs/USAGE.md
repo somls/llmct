@@ -4,7 +4,7 @@
 
 ### 第一次测试（建立缓存）
 ```bash
-python test_models.py \
+python mct.py \
   --api-key your-api-key \
   --base-url https://your-api-endpoint.com \
   --output first_test.txt
@@ -18,7 +18,7 @@ python test_models.py \
 
 ### 第二次测试（使用缓存）
 ```bash
-python test_models.py \
+python mct.py \
   --api-key your-api-key \
   --base-url https://your-api-endpoint.com \
   --output second_test.txt
@@ -87,7 +87,7 @@ cat test_cache.json
 
 ```bash
 # 每天运行一次，缓存24小时
-python test_models.py \
+python mct.py \
   --api-key $API_KEY \
   --base-url $API_URL \
   --cache-duration 24 \
@@ -103,7 +103,7 @@ python test_models.py \
 
 ```bash
 # 清除旧缓存，重新测试
-python test_models.py \
+python mct.py \
   --api-key $NEW_API_KEY \
   --base-url $NEW_API_URL \
   --clear-cache \
@@ -115,7 +115,7 @@ python test_models.py \
 
 ```bash
 # 周一清除缓存，完整测试
-python test_models.py \
+python mct.py \
   --api-key $API_KEY \
   --base-url $API_URL \
   --clear-cache \
@@ -128,7 +128,7 @@ python test_models.py \
 
 ```bash
 # 禁用缓存，获取实时数据
-python test_models.py \
+python mct.py \
   --api-key $API_KEY \
   --base-url $API_URL \
   --no-cache \
@@ -201,10 +201,10 @@ gpt-4o | 1.61秒 | - | [缓存] Hello! How can I assist you today?
 保存多次测试结果，对比错误变化：
 ```bash
 # 第一天
-python test_models.py ... --output day1.txt
+python mct.py ... --output day1.txt
 
 # 第二天
-python test_models.py ... --output day2.txt
+python mct.py ... --output day2.txt
 
 # 对比差异
 diff day1.txt day2.txt
@@ -213,7 +213,7 @@ diff day1.txt day2.txt
 ### 技巧3：性能监控
 记录测试时间，监控API性能：
 ```bash
-time python test_models.py ... --output results.txt
+time python mct.py ... --output results.txt
 ```
 
 ### 技巧4：批量清理缓存

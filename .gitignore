@@ -3,11 +3,21 @@ test_results.txt
 test_results_*.txt
 *.result.txt
 test_analysis.md
+*.html
+*.csv
+*.json
+!example_*.json
+!example_*.csv
+!example_*.html
 
 # 缓存文件
 test_cache.json
 test_cache_*.json
 *.cache.json
+test_cache.db
+test_cache_*.db
+*.db
+!schema.db
 
 # Python缓存
 __pycache__/
@@ -15,12 +25,23 @@ __pycache__/
 *$py.class
 *.so
 .Python
+*.pyc
+
+# 测试和覆盖率
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+coverage.xml
+*.cover
 
 # 虚拟环境
 venv/
 env/
 ENV/
 .venv/
+env.bak/
+venv.bak/
 
 # IDE配置
 .vscode/
@@ -28,15 +49,44 @@ ENV/
 *.swp
 *.swo
 *~
+.project
+.pydevproject
+.settings/
 
 # 操作系统文件
 .DS_Store
 Thumbs.db
 desktop.ini
+*.lnk
 
 # 日志文件
 *.log
+logs/
 
 # 临时文件
 *.tmp
 *.bak
+*.swp
+*~.nib
+
+# 打包文件
+dist/
+build/
+*.egg-info/
+*.egg
+
+# 配置文件（包含敏感信息）
+config.yaml
+!config_template.yaml
+!example_config.yaml
+.env
+.env.local
+
+# 文档编译输出
+docs/_build/
+docs/.doctrees/
+
+# 备份文件
+*.bak
+*.backup
+*_backup.*

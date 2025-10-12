@@ -3,7 +3,7 @@
 测试模型分类功能
 """
 
-from test_models import ModelTester
+from mct import ModelTester
 
 def test_model_classification():
     """测试各种模型的分类是否正确"""

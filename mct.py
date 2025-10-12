@@ -165,7 +165,8 @@ class ResultCache:
 
 class ModelTester:
     def __init__(self, api_key: str, base_url: str, timeout: int = 30, 
-                 cache_enabled: bool = True, cache_duration: int = 24):
+                 cache_enabled: bool = True, cache_duration: int = 24,
+                 request_delay: float = 10.0, max_retries: int = 3):
         self.api_key = api_key
         self.base_url = base_url.rstrip('/')
         self.timeout = timeout
@@ -175,6 +176,76 @@ class ModelTester:
         }
         self.cache = ResultCache(cache_duration_hours=cache_duration) if cache_enabled else None
         self.error_stats = {}  # 错误统计
+        self.request_delay = request_delay  # 请求之间的延迟（秒）
+        self.max_retries = max_retries      # 429错误最大重试次数
+    
+    def _make_request_with_retry(self, method: str, url: str, **kwargs) -> requests.Response:
+        """
+        发送HTTP请求，自动处理429错误重试（指数退避）
+        
+        Args:
+            method: HTTP方法 ('GET', 'POST', 等)
+            url: 请求URL
+            **kwargs: requests库的其他参数
+            
+        Returns:
+            Response对象
+            
+        Raises:
+            requests.exceptions.RequestException: 请求失败
+        """
+        last_exception = None
+        
+        for attempt in range(self.max_retries + 1):
+            try:
+                # 发送请求
+                if method.upper() == 'GET':
+                    response = requests.get(url, **kwargs)
+                elif method.upper() == 'POST':
+                    response = requests.post(url, **kwargs)
+                else:
+                    raise ValueError(f"Unsupported HTTP method: {method}")
+                
+                # 如果是429错误且还有重试次数，则重试
+                if response.status_code == 429 and attempt < self.max_retries:
+                    # 指数退避：2^attempt 秒
+                    wait_time = 2 ** attempt
+                    
+                    # 尝试从响应头获取建议的等待时间
+                    retry_after = response.headers.get('Retry-After')
+                    if retry_after:
+                        try:
+                            wait_time = int(retry_after)
+                        except ValueError:
+                            pass
+                    
+                    print(f"  [速率限制] 收到429错误，等待{wait_time}秒后重试 (第{attempt + 1}次重试)...", end='', flush=True)
+                    time.sleep(wait_time)
+                    print(" 继续")
+                    continue
+                
+                # 其他错误或成功，直接返回
+                response.raise_for_status()
+                return response
+                
+            except requests.exceptions.HTTPError as e:
+                # 非429的HTTP错误，直接抛出
+                if e.response.status_code != 429:
+                    raise
+                last_exception = e
+            except requests.exceptions.RequestException as e:
+                last_exception = e
+                if attempt < self.max_retries:
+                    wait_time = 2 ** attempt
+                    time.sleep(wait_time)
+                else:
+                    raise
+        
+        # 所有重试都失败了
+        if last_exception:
+            raise last_exception
+        else:
+            raise requests.exceptions.RequestException("All retries failed")
     
     def get_models(self) -> List[Dict]:
         """获取模型列表"""
@@ -254,7 +325,8 @@ class ModelTester:
             }
             
             start_time = time.time()
-            response = requests.post(
+            response = self._make_request_with_retry(
+                'POST',
                 url, 
                 headers=self.headers, 
                 json=payload, 
@@ -262,7 +334,6 @@ class ModelTester:
             )
             response_time = time.time() - start_time
             
-            response.raise_for_status()
             data = response.json()
             
             if 'choices' in data and len(data['choices']) > 0:
@@ -301,7 +372,8 @@ class ModelTester:
             }
             
             start_time = time.time()
-            response = requests.post(
+            response = self._make_request_with_retry(
+                'POST',
                 url, 
                 headers=self.headers, 
                 json=payload, 
@@ -309,7 +381,6 @@ class ModelTester:
             )
             response_time = time.time() - start_time
             
-            response.raise_for_status()
             data = response.json()
             
             if 'choices' in data and len(data['choices']) > 0:
@@ -367,7 +438,8 @@ class ModelTester:
             }
             
             start_time = time.time()
-            response = requests.post(
+            response = self._make_request_with_retry(
+                'POST',
                 url, 
                 headers=self.headers, 
                 json=payload, 
@@ -375,7 +447,6 @@ class ModelTester:
             )
             response_time = time.time() - start_time
             
-            response.raise_for_status()
             data = response.json()
             
             if 'data' in data and len(data['data']) > 0:
@@ -406,7 +477,8 @@ class ModelTester:
             }
             
             start_time = time.time()
-            response = requests.post(
+            response = self._make_request_with_retry(
+                'POST',
                 url, 
                 headers=self.headers, 
                 json=payload, 
@@ -414,7 +486,6 @@ class ModelTester:
             )
             response_time = time.time() - start_time
             
-            response.raise_for_status()
             data = response.json()
             
             if 'data' in data and len(data['data']) > 0:
@@ -438,7 +509,8 @@ class ModelTester:
             url = f"{self.base_url}/v1/models/{model_id}"
             
             start_time = time.time()
-            response = requests.get(
+            response = self._make_request_with_retry(
+                'GET',
                 url, 
                 headers=self.headers, 
                 timeout=self.timeout
@@ -826,6 +898,10 @@ class ModelTester:
             # 立即输出当前测试结果
             row = self.format_row(model_id, success, response_time, error_code, content, col_widths)
             print(row)
+            
+            # 添加请求之间的延迟，避免触发速率限制
+            if idx < len(models) and self.request_delay > 0:
+                time.sleep(self.request_delay)
         
         # 打印统计信息
         print(f"{'='*total_width}")
@@ -863,34 +939,34 @@ def main():
         epilog="""
 示例用法:
   # 基础测试（全量）
-  python test_models.py --api-key sk-xxx --base-url https://api.openai.com
+  python mct.py --api-key sk-xxx --base-url https://api.openai.com
   
   # [NEW] 仅测试上次失败的模型
-  python test_models.py --api-key sk-xxx --base-url https://api.openai.com --only-failed
+  python mct.py --api-key sk-xxx --base-url https://api.openai.com --only-failed
   
   # [NEW] 跳过失败5次以上的模型
-  python test_models.py --api-key sk-xxx --base-url https://api.openai.com --max-failures 5
+  python mct.py --api-key sk-xxx --base-url https://api.openai.com --max-failures 5
   
   # [NEW] 组合使用：只测试失败模型，跳过失败3次以上的
-  python test_models.py --api-key sk-xxx --base-url https://api.openai.com --only-failed --max-failures 3
+  python mct.py --api-key sk-xxx --base-url https://api.openai.com --only-failed --max-failures 3
   
   # [NEW] 重置失败计数
-  python test_models.py --api-key sk-xxx --base-url https://api.openai.com --reset-failures
+  python mct.py --api-key sk-xxx --base-url https://api.openai.com --reset-failures
   
   # 自定义测试消息
-  python test_models.py --api-key sk-xxx --base-url https://api.openai.com --message "你好"
+  python mct.py --api-key sk-xxx --base-url https://api.openai.com --message "你好"
   
   # 禁用缓存
-  python test_models.py --api-key sk-xxx --base-url https://api.openai.com --no-cache
+  python mct.py --api-key sk-xxx --base-url https://api.openai.com --no-cache
   
   # 自定义缓存有效期（48小时）
-  python test_models.py --api-key sk-xxx --base-url https://api.openai.com --cache-duration 48
+  python mct.py --api-key sk-xxx --base-url https://api.openai.com --cache-duration 48
   
   # 清除缓存后重新测试
-  python test_models.py --api-key sk-xxx --base-url https://api.openai.com --clear-cache
+  python mct.py --api-key sk-xxx --base-url https://api.openai.com --clear-cache
   
   # 保存结果到文件
-  python test_models.py --api-key sk-xxx --base-url https://api.openai.com --output my_results.txt
+  python mct.py --api-key sk-xxx --base-url https://api.openai.com --output my_results.txt
         """
     )
     
@@ -917,6 +993,20 @@ def main():
         type=int,
         default=30,
         help='请求超时时间(秒) (默认: 30)'
+    )
+    
+    parser.add_argument(
+        '--request-delay',
+        type=float,
+        default=10.0,
+        help='请求之间的延迟(秒)，避免速率限制 (默认: 10.0)'
+    )
+    
+    parser.add_argument(
+        '--max-retries',
+        type=int,
+        default=3,
+        help='遇到429错误时的最大重试次数 (默认: 3)'
     )
     
     parser.add_argument(
@@ -1003,7 +1093,9 @@ def main():
             base_url=args.base_url,
             timeout=args.timeout,
             cache_enabled=not args.no_cache,
-            cache_duration=args.cache_duration
+            cache_duration=args.cache_duration,
+            request_delay=args.request_delay,
+            max_retries=args.max_retries
         )
         
         # 重置失败计数

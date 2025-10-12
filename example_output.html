@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>大模型测试报告</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+            background: #f5f7fa;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            padding: 30px;
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+        .metadata {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 6px;
+            margin: 20px 0;
+            font-size: 14px;
+            color: #666;
+        }
+        .metadata p {
+            margin: 5px 0;
+        }
+        .summary {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+        .stat-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        .stat-card.success {
+            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+        }
+        .stat-card.failed {
+            background: linear-gradient(135deg, #ee0979 0%, #ff6a00 100%);
+        }
+        .stat-card .label {
+            font-size: 14px;
+            opacity: 0.9;
+            margin-bottom: 8px;
+        }
+        .stat-card .value {
+            font-size: 32px;
+            font-weight: bold;
+        }
+        h2 {
+            color: #333;
+            margin: 30px 0 15px;
+            font-size: 20px;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 8px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+            font-size: 14px;
+        }
+        th {
+            background: #667eea;
+            color: white;
+            padding: 12px;
+            text-align: left;
+            font-weight: 600;
+        }
+        td {
+            padding: 10px 12px;
+            border-bottom: 1px solid #e9ecef;
+        }
+        tr:hover {
+            background: #f8f9fa;
+        }
+        .success {
+            color: #28a745;
+            font-weight: bold;
+        }
+        .failed {
+            color: #dc3545;
+            font-weight: bold;
+        }
+        .error-table {
+            max-width: 600px;
+        }
+        @media print {
+            body {
+                background: white;
+                padding: 0;
+            }
+            .container {
+                box-shadow: none;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧪 大模型连通性测试报告</h1>
+        
+        <div class="metadata">
+            <p><strong>测试时间:</strong> 2025-10-11 23:50:14</p>
+            <p><strong>Base URL:</strong> https://api.test.com</p>
+        </div>
+        
+        <div class="summary">
+            <div class="stat-card">
+                <div class="label">总测试数</div>
+                <div class="value">3</div>
+            </div>
+            <div class="stat-card success">
+                <div class="label">成功</div>
+                <div class="value">2</div>
+            </div>
+            <div class="stat-card failed">
+                <div class="label">失败</div>
+                <div class="value">1</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">成功率</div>
+                <div class="value">66.7%</div>
+            </div>
+        </div>
+        
+        <h2>📊 测试结果详情</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>模型名称</th>
+                    <th>状态</th>
+                    <th>响应时间</th>
+                    <th>错误代码</th>
+                    <th>响应内容</th>
+                </tr>
+            </thead>
+            <tbody>
+
+            <tr>
+                <td>gpt-4o</td>
+                <td class="success">✓ 成功</td>
+                <td>1.20秒</td>
+                <td>-</td>
+                <td>Hello!</td>
+            </tr>
+
+            <tr>
+                <td>gpt-3.5</td>
+                <td class="success">✓ 成功</td>
+                <td>0.80秒</td>
+                <td>-</td>
+                <td>Hi there!</td>
+            </tr>
+
+            <tr>
+                <td>test-model</td>
+                <td class="failed">✗ 失败</td>
+                <td>-</td>
+                <td>HTTP_403</td>
+                <td></td>
+            </tr>
+
+            </tbody>
+        </table>
+        
+        <h2>❌ 错误统计</h2>
+        <table class="error-table">
+            <thead>
+                <tr>
+                    <th>错误代码</th>
+                    <th>数量</th>
+                    <th>占比</th>
+                </tr>
+            </thead>
+            <tbody>
+
+            <tr>
+                <td>HTTP_403</td>
+                <td>1</td>
+                <td>100.0%</td>
+            </tr>
+
+            </tbody>
+        </table>
+    </div>
+</body>
+</html>

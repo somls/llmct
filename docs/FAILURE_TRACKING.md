@@ -38,7 +38,7 @@
 使用 `--only-failed` 参数只测试上次失败的模型：
 
 ```bash
-python test_models.py --api-key sk-xxx --base-url https://api.openai.com --only-failed
+python mct.py --api-key sk-xxx --base-url https://api.openai.com --only-failed
 ```
 
 **效果：**
@@ -58,7 +58,7 @@ python test_models.py --api-key sk-xxx --base-url https://api.openai.com --only-
 
 ```bash
 # 跳过失败5次以上的模型
-python test_models.py --api-key sk-xxx --base-url https://api.openai.com --max-failures 5
+python mct.py --api-key sk-xxx --base-url https://api.openai.com --max-failures 5
 ```
 
 **输出示例：**
@@ -78,7 +78,7 @@ test-model              |     -      |   SKIPPED    | 已跳过(失败8次)
 
 ```bash
 # 只测试失败模型，但跳过失败3次以上的
-python test_models.py --api-key sk-xxx --base-url https://api.openai.com --only-failed --max-failures 3
+python mct.py --api-key sk-xxx --base-url https://api.openai.com --only-failed --max-failures 3
 ```
 
 **工作流程：**
@@ -118,7 +118,7 @@ dall-e-restricted                                  4            HTTP_403        
 使用 `--reset-failures` 重置所有失败计数：
 
 ```bash
-python test_models.py --api-key sk-xxx --base-url https://api.openai.com --reset-failures
+python mct.py --api-key sk-xxx --base-url https://api.openai.com --reset-failures
 ```
 
 **场景：**
@@ -132,13 +132,13 @@ python test_models.py --api-key sk-xxx --base-url https://api.openai.com --reset
 
 ```bash
 # 第一次：全量测试，建立基线
-python test_models.py --api-key $KEY --base-url $URL --output day1.txt
+python mct.py --api-key $KEY --base-url $URL --output day1.txt
 
 # 第二天：只测试失败的
-python test_models.py --api-key $KEY --base-url $URL --only-failed --output day2.txt
+python mct.py --api-key $KEY --base-url $URL --only-failed --output day2.txt
 
 # 第三天：继续只测试失败的
-python test_models.py --api-key $KEY --base-url $URL --only-failed --output day3.txt
+python mct.py --api-key $KEY --base-url $URL --only-failed --output day3.txt
 ```
 
 **效果：**
@@ -150,7 +150,7 @@ python test_models.py --api-key $KEY --base-url $URL --only-failed --output day3
 
 ```bash
 # 跳过已知长期失败的模型，专注于可能恢复的
-python test_models.py --api-key $KEY --base-url $URL --only-failed --max-failures 3
+python mct.py --api-key $KEY --base-url $URL --only-failed --max-failures 3
 ```
 
 **优势：**
@@ -162,17 +162,17 @@ python test_models.py --api-key $KEY --base-url $URL --only-failed --max-failure
 
 ```bash
 # 每月重置一次失败计数
-python test_models.py --api-key $KEY --base-url $URL --reset-failures
+python mct.py --api-key $KEY --base-url $URL --reset-failures
 
 # 然后做全量测试
-python test_models.py --api-key $KEY --base-url $URL --output monthly.txt
+python mct.py --api-key $KEY --base-url $URL --output monthly.txt
 ```
 
 ### 场景4：权限变更后
 
 ```bash
 # 权限更新后，重置计数重新测试
-python test_models.py --api-key $NEW_KEY --base-url $URL --reset-failures --clear-cache
+python mct.py --api-key $NEW_KEY --base-url $URL --reset-failures --clear-cache
 ```
 
 ## 命令行参数
@@ -289,13 +289,13 @@ claude-3-5-haiku-20241022                          10           HTTP_403        
 
 ```bash
 # 周一：全量测试，重置计数
-python test_models.py --api-key $KEY --base-url $URL --reset-failures --output mon.txt
+python mct.py --api-key $KEY --base-url $URL --reset-failures --output mon.txt
 
 # 周二-周五：只测试失败模型
-python test_models.py --api-key $KEY --base-url $URL --only-failed --output tue.txt
+python mct.py --api-key $KEY --base-url $URL --only-failed --output tue.txt
 
 # 专注测试：跳过持续失败的
-python test_models.py --api-key $KEY --base-url $URL --only-failed --max-failures 3
+python mct.py --api-key $KEY --base-url $URL --only-failed --max-failures 3
 ```
 
 ### 2. 设置合理的阈值
@@ -313,7 +313,7 @@ python test_models.py --api-key $KEY --base-url $URL --only-failed --max-failure
 ```bash
 # 每月第一天重置
 if [ $(date +%d) -eq 01 ]; then
-  python test_models.py --api-key $KEY --base-url $URL --reset-failures
+  python mct.py --api-key $KEY --base-url $URL --reset-failures
 fi
 ```
 
@@ -321,7 +321,7 @@ fi
 
 保存每次的持续失败报告：
 ```bash
-python test_models.py --api-key $KEY --base-url $URL > test_$(date +%Y%m%d).log
+python mct.py --api-key $KEY --base-url $URL > test_$(date +%Y%m%d).log
 ```
 
 对比不同日期的失败模型数量，监控趋势。

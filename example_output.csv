@@ -1,0 +1,4 @@
+model,success,response_time,error_code,content
+gpt-4o,True,1.2,,Hello!
+gpt-3.5,True,0.8,,Hi there!
+test-model,False,0,HTTP_403,
