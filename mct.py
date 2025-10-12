@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
 大模型连通性和可用性测试工具
 测试语言模型的响应能力和非语言模型的连通性
@@ -13,6 +14,14 @@ import requests
 from datetime import datetime, timedelta
 import unicodedata
 import os
+
+# 设置Windows控制台输出编码
+if sys.platform == 'win32':
+    import codecs
+    if hasattr(sys.stdout, 'buffer'):
+        sys.stdout = codecs.getwriter('utf-8')(sys.stdout.buffer, 'strict')
+    if hasattr(sys.stderr, 'buffer'):
+        sys.stderr = codecs.getwriter('utf-8')(sys.stderr.buffer, 'strict')
 
 
 def display_width(text: str) -> int:

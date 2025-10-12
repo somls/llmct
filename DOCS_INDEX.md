@@ -140,8 +140,8 @@ LLMCT/
 - **[tests/](tests/)** - 单元测试  
   覆盖率80%+，21个测试用例
 
-- **[test_optimizations.py](test_optimizations.py)** - 优化功能测试  
-  验证v2.1.0优化功能
+- **[scripts/test_optimizations.py](scripts/test_optimizations.py)** - 优化功能测试  
+  验证优化功能
 
 ---
 
@@ -180,7 +180,13 @@ ls -la docs/
 python examples/example_usage.py
 
 # 优化测试
-python test_optimizations.py
+python scripts/test_optimizations.py
+
+# 快速测试
+python scripts/quick_test.py --api-key YOUR_KEY --base-url YOUR_URL
+
+# 性能基准测试
+python scripts/benchmark_performance.py
 
 # 单元测试
 pytest tests/ -v
@@ -230,7 +236,6 @@ pytest tests/ -v
 
 ---
 
-**文档版本:** v2.1.0  
 **最后更新:** 2025-01-16  
-**文档数量:** 10个  
+**文档数量:** 8个  
 **维护状态:** ✅ 活跃

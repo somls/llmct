@@ -1,6 +1,6 @@
 # LLMCT - 大模型连通性测试工具
 
-> 🚀 **v2.1.0** - 高性能、智能化的大语言模型API测试工具
+> 🚀 高性能、智能化的大语言模型API测试工具
 
 [![Python](https://img.shields.io/badge/Python-3.7%2B-blue)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
@@ -15,7 +15,7 @@
 - 🔄 **失败追踪** - 智能跳过持续失败的模型，节省时间
 - 📊 **多格式报告** - TXT、JSON、CSV、HTML输出
 
-### 性能优化（v2.1.0）
+### 性能优化
 - ⚡ **连接池管理** - 连接复用，减少30%建立时间
 - 🚀 **自适应并发** - 动态调整并发数，减少80%的429错误
 - 💾 **SQLite缓存** - 批量IO，减少95%的磁盘操作
@@ -248,6 +248,4 @@ python test_optimizations.py
 
 ---
 
-**最后更新:** 2025-01-16  
-**当前版本:** v2.1.0  
 **Python版本:** 3.7+
