@@ -23,10 +23,11 @@ test_analysis.md
 *_COMPLETE.md
 *_REPORT.md
 *_RECOMMENDATIONS.md
+*_GUIDE.md
+*_PHASE*.md
 analyze_*.py
 check_*.py
 diagnose_*.py
-quick_test.py
 test_realtime_output.py
 one.txt
 *_analysis.json
@@ -40,18 +41,12 @@ config_optimized*.yaml
 config_quick_test.yaml
 api_test_config.yaml
 
-# 保留重要文档
+# 保留重要文档（v2.3.0精简版）
 !FINAL_TEST_ANALYSIS.md
-!PROJECT_ANALYSIS.md
-!OPTIMIZATION_SUMMARY.md
-!API_TEST_SUMMARY.md
+!PROJECT_SIMPLIFICATION.md
+!CLEANUP_SUMMARY.md
 
-# 缓存文件
-test_cache.json
-test_cache_*.json
-*.cache.json
-test_cache.db
-test_cache_*.db
+# 数据库文件（v2.3.0已移除缓存功能，但保留规则以防临时文件）
 *.db
 !schema.db
 

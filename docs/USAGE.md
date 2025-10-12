@@ -1,35 +1,41 @@
-# 优化功能使用指南
+# 使用指南（精简版 v2.3.0）
 
 ## 快速开始
 
-### 第一次测试（建立缓存）
+### 基础测试
 ```bash
 python mct.py \
   --api-key your-api-key \
   --base-url https://your-api-endpoint.com \
-  --output first_test.txt
+  --output test_results.txt
 ```
 
 **预期结果：**
-- 测试所有1132个模型
-- 耗时约20-30分钟
-- 成功的模型会被缓存
+- 实时测试所有可用模型
 - 生成详细的错误统计报告
+- 自动生成API健康度评分和告警
+- 保存详细分析报告到 `test_results_analysis.json`
 
-### 第二次测试（使用缓存）
+### 生成不同格式的报告
 ```bash
+# HTML格式（便于浏览器查看）
 python mct.py \
   --api-key your-api-key \
   --base-url https://your-api-endpoint.com \
-  --output second_test.txt
-```
+  --output report.html
 
-**预期结果：**
-- 约265个成功模型直接从缓存读取（标记为[缓存]）
-- 只测试867个上次失败的模型
-- 耗时约5-10分钟（节省70%+时间）
-- 429错误显著减少
-- 同样生成完整的错误统计
+# JSON格式（便于程序处理）
+python mct.py \
+  --api-key your-api-key \
+  --base-url https://your-api-endpoint.com \
+  --output report.json
+
+# CSV格式（便于Excel分析）
+python mct.py \
+  --api-key your-api-key \
+  --base-url https://your-api-endpoint.com \
+  --output report.csv
+```
 
 ## 核心功能演示
 
@@ -44,14 +50,11 @@ python mct.py \
 
 错误类型               错误描述                       数量         占失败比例        占总数比例     
 --------------------------------------------------------------------------------------------------------------
-HTTP_403             权限拒绝/未授权                 520           60.0%          45.9%
-HTTP_400             请求参数错误                    130           15.0%          11.5%
-HTTP_429             速率限制                        87            10.0%           7.7%
-HTTP_404             模型不存在                      65             7.5%           5.7%
-HTTP_500             服务器内部错误                  45             5.2%           4.0%
-HTTP_503             服务不可用                      20             2.3%           1.8%
+HTTP_403             权限拒绝/未授权                 25            50.0%          16.7%
+HTTP_400             请求参数错误                    15            30.0%          10.0%
+HTTP_429             速率限制                        10            20.0%           6.7%
 
-总失败数                                              867          100.0%          76.6%
+总失败数                                              50           100.0%          33.3%
 ==================================================================================================================
 ```
 
@@ -60,201 +63,338 @@ HTTP_503             服务不可用                      20             2.3%   
 - 了解API限制情况
 - 评估模型可用性
 
-### 2. 缓存机制
+### 2. 自动分析报告
 
-#### 查看缓存状态
-测试开始时会显示：
+每次测试完成后，自动生成分析报告：
+
+#### 控制台输出
 ```
-缓存状态: 启用 (有效记录: 265/300, 有效期: 24小时)
+==================================================================================================================
+📊 测试分析报告
+==================================================================================================================
+
+🏥 API健康度评分
+------------------------------------------------------------------------------------------------------------------
+综合评分: 85.5/100 (等级: B)
+  - 成功率评分: 90.0/100
+  - 响应速度评分: 82.5/100
+  - 稳定性评分: 78.0/100
+平均响应时间: 1.35秒
+
+⚠️  告警信息
+------------------------------------------------------------------------------------------------------------------
+🟡 [MEDIUM] SLOW_RESPONSE: 平均响应时间过慢: 5.2秒 (阈值: 5.0秒)
+
+[信息] 详细分析报告已保存到: test_results_analysis.json
+==================================================================================================================
 ```
 
-#### 缓存命中统计
-测试结束时显示：
-```
-测试完成 | 总计: 1132 | 成功: 265 | 失败: 867 | 缓存命中: 200 | 成功率: 23.4%
-```
+#### 分析报告文件（JSON）
+自动生成 `*_analysis.json` 文件，包含：
+- 完整的健康度评分详情
+- 所有触发的告警列表
+- 生成时间戳
 
-#### 缓存文件
-查看缓存内容：
-```bash
-cat test_cache.json
+```json
+{
+  "health_score": {
+    "score": 85.5,
+    "grade": "B",
+    "details": {
+      "success_score": 90.0,
+      "speed_score": 82.5,
+      "stability_score": 78.0,
+      "success_rate": 90.0,
+      "avg_response_time": 1.35
+    }
+  },
+  "alerts": [],
+  "timestamp": "2025-01-17T10:30:00"
+}
 ```
 
 ## 实用场景
 
-### 场景1：日常监控
-**目标：** 每天检查API可用性，避免重复测试
+### 场景1：API健康检查
+**目标：** 快速检查API整体健康状况
 
 ```bash
-# 每天运行一次，缓存24小时
+# 运行测试并生成分析报告
 python mct.py \
   --api-key $API_KEY \
   --base-url $API_URL \
-  --cache-duration 24 \
-  --output daily_report.txt
+  --output health_check.json
+
+# 查看健康度评分
+cat health_check_analysis.json
 ```
 
 **效果：**
-- 第一天：全量测试，建立基线
-- 后续每天：只测试失败模型，节省时间和配额
+- 获取API健康度评分（0-100分）
+- 自动识别告警问题
+- 了解成功率、响应速度、稳定性
 
-### 场景2：快速验证配置
-**目标：** 修改API配置后，快速验证是否生效
-
-```bash
-# 清除旧缓存，重新测试
-python mct.py \
-  --api-key $NEW_API_KEY \
-  --base-url $NEW_API_URL \
-  --clear-cache \
-  --output new_config_test.txt
-```
-
-### 场景3：定期完整测试
-**目标：** 每周做一次完整测试，更新缓存
+### 场景2：问题排查
+**目标：** 排查API访问问题
 
 ```bash
-# 周一清除缓存，完整测试
+# 生成HTML报告便于查看
 python mct.py \
   --api-key $API_KEY \
   --base-url $API_URL \
-  --clear-cache \
-  --cache-duration 168 \  # 7天有效期
-  --output weekly_full_test.txt
+  --output debug.html
+
+# 在浏览器中打开 debug.html 查看详细结果
 ```
 
-### 场景4：调试特定问题
-**目标：** 调试时需要最新数据，不使用缓存
+**效果：**
+- 可视化的错误分布
+- 详细的错误信息
+- 便于与团队分享
+
+### 场景3：性能基准测试
+**目标：** 评估API性能
 
 ```bash
-# 禁用缓存，获取实时数据
+# 生成JSON报告
 python mct.py \
   --api-key $API_KEY \
   --base-url $API_URL \
-  --no-cache \
-  --output debug_test.txt
+  --output benchmark.json
+
+# 查看详细分析
+cat benchmark_analysis.json | jq '.health_score'
 ```
 
-## 优化效果对比
+**效果：**
+- 量化的性能指标
+- 平均响应时间统计
+- 便于性能追踪
 
-### 测试时间对比
+### 场景4：跳过特定模型类型
+**目标：** 只测试需要的模型类型
 
-| 测试类型 | 模型数量 | 耗时 | 缓存命中 |
-|---------|---------|------|---------|
-| 首次测试 | 1132 | ~25分钟 | 0 |
-| 第二次测试（缓存） | 1132 | ~8分钟 | 265 |
-| 节省 | - | **68%** | - |
+```bash
+# 只测试语言模型，跳过其他类型
+python mct.py \
+  --api-key $API_KEY \
+  --base-url $API_URL \
+  --skip-vision \
+  --skip-audio \
+  --skip-embedding \
+  --skip-image-gen \
+  --output language_models.txt
+```
 
-### API调用对比
+**效果：**
+- 节省测试时间
+- 专注于特定模型类型
+- 减少API调用次数
 
-| 测试类型 | API调用次数 | 429错误 |
-|---------|------------|---------|
-| 无缓存 | 1132 | ~110 |
-| 有缓存（第二次） | 867 | ~35 |
-| 减少 | **23%** | **68%** |
+## 健康度评分说明
 
-### 成本对比（假设）
+### 评分维度
 
-假设API按调用次数计费：
-- 首次测试成本：$5.66 (1132次 × $0.005)
-- 使用缓存后：$4.34 (867次 × $0.005)
-- **节省：23%**
+健康度评分（0-100分）由三个维度组成：
+
+| 维度 | 权重 | 说明 |
+|-----|------|------|
+| 成功率 | 50% | 模型测试成功的比例 |
+| 响应速度 | 30% | 平均响应时间，目标<2秒 |
+| 稳定性 | 20% | 错误分布的均匀程度 |
+
+### 等级划分
+
+| 分数 | 等级 | 评价 |
+|-----|------|------|
+| 90-100 | A | 优秀 |
+| 80-89 | B | 良好 |
+| 70-79 | C | 中等 |
+| 60-69 | D | 较差 |
+| <60 | F | 不及格 |
+
+### 告警类型
+
+| 告警类型 | 严重程度 | 触发条件 |
+|---------|---------|---------|
+| LOW_SUCCESS_RATE | 高 | 成功率 < 50% |
+| SLOW_RESPONSE | 中 | 平均响应时间 > 5秒 |
+| RATE_LIMIT | 高 | HTTP 429错误 > 50个 |
+| PERMISSION_DENIED | 高 | HTTP 403错误 > 100个 |
+| TIMEOUT | 中 | 超时错误 > 20个 |
 
 ## 常见问题
 
-### Q1: 缓存什么时候会失效？
-**A:** 两种情况：
-1. 超过设置的有效期（默认24小时）
-2. 手动清除缓存（`--clear-cache`）
+### Q1: 分析报告文件在哪里？
+**A:** 自动保存在输出文件同目录，文件名为 `<输出文件名>_analysis.json`。
+例如：`--output results.txt` 会生成 `results_analysis.json`
 
-### Q2: 失败的测试会被缓存吗？
-**A:** 不会。只有成功的测试才会被缓存，确保下次重新测试失败的模型。
+### Q2: 如何提高测试速度？
+**A:** 
+1. 使用 `--skip-vision` 等参数跳过不需要的模型类型
+2. 减小 `--request-delay` 参数（需注意API速率限制）
+3. 增加 `--timeout` 可以减少等待时间
 
-### Q3: 如何查看缓存了哪些模型？
-**A:** 查看 `test_cache.json` 文件，或在测试开始时看缓存状态提示。
+### Q3: 如何理解健康度评分？
+**A:** 
+- **90分以上（A）**：API状态优秀，建议保持
+- **80-89分（B）**：API状态良好，可考虑优化
+- **70-79分（C）**：API状态一般，需要关注
+- **60-69分（D）**：API状态较差，建议排查问题
+- **60分以下（F）**：API状态很差，需要立即处理
 
-### Q4: 缓存文件可以手动编辑吗？
-**A:** 可以，但建议使用 `--clear-cache` 参数清除整个缓存。
+### Q4: 告警信息表示什么？
+**A:** 告警信息指出可能的问题：
+- **LOW_SUCCESS_RATE**: 成功率过低，检查API配置或网络
+- **SLOW_RESPONSE**: 响应时间过慢，可能影响用户体验
+- **RATE_LIMIT**: 触发速率限制，建议增加延迟
+- **PERMISSION_DENIED**: 权限问题，检查API密钥
+- **TIMEOUT**: 超时过多，检查网络或增加超时时间
 
-### Q5: 如何判断结果来自缓存？
-**A:** 输出行中会显示 `[缓存]` 标记：
+### Q5: 不同输出格式有什么区别？
+**A:**
+- **TXT**: 适合命令行查看，简洁明了
+- **JSON**: 适合程序处理和API集成
+- **CSV**: 适合Excel分析和数据处理
+- **HTML**: 适合浏览器查看，美观直观
+
+### Q6: 如何在CI/CD中使用？
+**A:** 
+```bash
+# 在CI脚本中运行测试
+python mct.py \
+  --api-key $API_KEY \
+  --base-url $API_URL \
+  --output test_results.json
+
+# 检查健康度评分
+score=$(cat test_results_analysis.json | jq -r '.health_score.score')
+if [ "$score" -lt 80 ]; then
+  echo "API健康度低于80分，测试失败"
+  exit 1
+fi
 ```
-gpt-4o | 1.61秒 | - | [缓存] Hello! How can I assist you today?
-```
-
-### Q6: 缓存会影响统计结果吗？
-**A:** 不会。错误统计基于实际测试结果，缓存的成功结果会正常计入统计。
 
 ## 高级技巧
 
-### 技巧1：自定义缓存策略
-根据API使用频率调整缓存时间：
+### 技巧1：自动化监控脚本
+创建定时监控脚本：
 ```bash
-# 高频使用（每天多次）- 短缓存
---cache-duration 12
+#!/bin/bash
+# monitor.sh - API健康监控脚本
 
-# 低频使用（每周一次）- 长缓存
---cache-duration 168
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+OUTPUT_FILE="health_check_${TIMESTAMP}.json"
+
+# 运行测试
+python mct.py \
+  --api-key $API_KEY \
+  --base-url $API_URL \
+  --output $OUTPUT_FILE
+
+# 检查健康度评分
+SCORE=$(jq -r '.health_score.score' "${OUTPUT_FILE}_analysis.json")
+if [ $(echo "$SCORE < 80" | bc) -eq 1 ]; then
+    echo "警告：API健康度仅为 ${SCORE}，低于80分！"
+    # 发送告警通知
+    # send_alert "API健康度异常: ${SCORE}"
+fi
 ```
 
-### 技巧2：分析错误趋势
-保存多次测试结果，对比错误变化：
+### 技巧2：对比分析
+比较不同时间的测试结果：
 ```bash
-# 第一天
-python mct.py ... --output day1.txt
+# 保存多次测试结果
+python mct.py --api-key $API_KEY --base-url $API_URL --output results_$(date +%Y%m%d).json
 
-# 第二天
-python mct.py ... --output day2.txt
-
-# 对比差异
-diff day1.txt day2.txt
+# 使用jq对比分析
+jq -s '.[0].health_score, .[1].health_score' \
+  results_20250116_analysis.json \
+  results_20250117_analysis.json
 ```
 
-### 技巧3：性能监控
-记录测试时间，监控API性能：
-```bash
-time python mct.py ... --output results.txt
+### 技巧3：自定义告警阈值
+通过分析JSON报告实现自定义告警：
+```python
+import json
+
+with open('test_results_analysis.json') as f:
+    analysis = json.load(f)
+
+# 自定义检查
+score = analysis['health_score']['score']
+success_rate = analysis['health_score']['details']['success_rate']
+avg_time = analysis['health_score']['details']['avg_response_time']
+
+if score < 85:
+    print(f"警告：健康度评分 {score} 低于85分")
+if success_rate < 90:
+    print(f"警告：成功率 {success_rate}% 低于90%")
+if avg_time > 3.0:
+    print(f"警告：平均响应时间 {avg_time}秒 超过3秒")
 ```
 
-### 技巧4：批量清理缓存
-定期清理过期缓存：
+### 技巧4：集成到监控系统
+将测试结果推送到监控系统：
 ```bash
-# Linux/Mac
-find . -name "test_cache.json" -mtime +7 -delete
+# 运行测试并推送到Prometheus
+python mct.py --api-key $API_KEY --base-url $API_URL --output metrics.json
 
-# Windows
-forfiles /p . /m test_cache.json /d -7 /c "cmd /c del @path"
+# 解析指标
+SCORE=$(jq -r '.health_score.score' metrics_analysis.json)
+SUCCESS_RATE=$(jq -r '.health_score.details.success_rate' metrics_analysis.json)
+
+# 推送到Prometheus Pushgateway
+cat <<EOF | curl --data-binary @- http://pushgateway:9091/metrics/job/llmct_test
+# HELP llmct_health_score API健康度评分
+# TYPE llmct_health_score gauge
+llmct_health_score $SCORE
+# HELP llmct_success_rate 测试成功率
+# TYPE llmct_success_rate gauge
+llmct_success_rate $SUCCESS_RATE
+EOF
 ```
 
 ## 最佳实践
 
-1. **首次测试后检查缓存**
-   - 验证成功模型数量是否合理
-   - 确认缓存文件已生成
+1. **定期健康检查**
+   - 每天运行一次健康检查
+   - 监控健康度评分趋势
+   - 及时响应告警信息
 
-2. **定期完整测试**
-   - 每周或每月进行一次无缓存的完整测试
-   - 更新基准数据
+2. **保存测试历史**
+   - 每次测试保存到带时间戳的文件
+   - 便于历史对比和趋势分析
+   - 建议格式：`results_YYYYMMDD_HHMMSS.json`
 
-3. **保存测试日志**
-   - 每次测试保存到不同文件
-   - 便于历史对比和问题追溯
+3. **关注健康度评分**
+   - 定期查看评分变化
+   - 评分下降时及时调查原因
+   - 目标保持80分以上
 
-4. **合理设置缓存时间**
-   - 根据API稳定性调整
-   - 稳定API可用更长缓存时间
+4. **合理设置请求延迟**
+   - 根据API速率限制调整
+   - 避免触发429错误
+   - 平衡速度和稳定性
 
-5. **关注错误统计**
-   - 重点关注高频错误
-   - 针对性优化API配置
+5. **充分利用分析报告**
+   - 阅读自动生成的告警信息
+   - 根据建议优化API配置
+   - 追踪问题解决进度
+
+6. **选择合适的输出格式**
+   - 日常检查使用TXT
+   - 自动化处理使用JSON
+   - 数据分析使用CSV
+   - 分享结果使用HTML
 
 ## 总结
 
-通过错误分类统计和缓存机制：
-- ✅ 测试时间减少70%+
-- ✅ API调用减少23%+
-- ✅ 429错误减少68%+
-- ✅ 更清晰的问题分析
-- ✅ 更高效的测试流程
+精简版LLMCT提供：
+- ✅ 实时测试，无缓存干扰
+- ✅ 自动健康度评分（0-100分）
+- ✅ 智能告警系统
+- ✅ 多格式输出支持
+- ✅ 简洁易用的命令行界面
 
-立即尝试这些优化功能，提升您的测试效率！
+专注于核心功能，提供更高效的API测试体验！

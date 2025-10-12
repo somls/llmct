@@ -20,14 +20,7 @@ class Config:
             'skip_vision': False,
             'skip_audio': False,
             'skip_embedding': False,
-            'skip_image_gen': False,
-            'only_failed': False,
-            'max_failures': 0
-        },
-        'cache': {
-            'enabled': True,
-            'duration_hours': 24,
-            'file': 'test_cache.json'
+            'skip_image_gen': False
         },
         'output': {
             'file': 'test_results.txt',
@@ -142,14 +135,7 @@ class Config:
             self.set('testing.skip_embedding', args.skip_embedding)
         if hasattr(args, 'skip_image_gen'):
             self.set('testing.skip_image_gen', args.skip_image_gen)
-        if hasattr(args, 'only_failed'):
-            self.set('testing.only_failed', args.only_failed)
-        if hasattr(args, 'max_failures') and args.max_failures:
-            self.set('testing.max_failures', args.max_failures)
-        if hasattr(args, 'no_cache'):
-            self.set('cache.enabled', not args.no_cache)
-        if hasattr(args, 'cache_duration') and args.cache_duration:
-            self.set('cache.duration_hours', args.cache_duration)
+
     
     def to_dict(self) -> Dict:
         """导出为字典"""
@@ -158,7 +144,7 @@ class Config:
     @staticmethod
     def create_template(file_path='config_template.yaml'):
         """创建配置模板文件"""
-        template = """# 大模型连通性测试工具 - 配置文件
+        template = """# 大模型连通性测试工具 - 配置文件（精简版）
 
 # API配置
 api:
@@ -173,14 +159,6 @@ testing:
   skip_audio: false  # 跳过音频模型测试
   skip_embedding: false  # 跳过嵌入模型测试
   skip_image_gen: false  # 跳过图像生成测试
-  only_failed: false  # 仅测试失败模型
-  max_failures: 0  # 失败次数阈值（0=不限制）
-
-# 缓存配置
-cache:
-  enabled: true  # 是否启用缓存
-  duration_hours: 24  # 缓存有效期（小时）
-  file: test_cache.json  # 缓存文件路径
 
 # 输出配置
 output:

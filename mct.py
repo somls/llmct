@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-大模型连通性和可用性测试工具 - 重构版
+大模型连通性和可用性测试工具 - 精简版
 测试语言模型的响应能力和非语言模型的连通性
-使用优化的SQLite缓存和模块化代码
+移除缓存功能，专注于实时测试和自动分析
 """
 
 import argparse
@@ -13,13 +13,24 @@ import os
 from typing import List, Dict, Tuple
 import requests
 from datetime import datetime
-import unicodedata
 
 # 导入优化模块
-from llmct.utils.sqlite_cache import SQLiteCache
 from llmct.core.classifier import ModelClassifier
 from llmct.core.reporter import Reporter
+from llmct.core.analyzer import ResultAnalyzer
 from llmct.utils.logger import get_logger
+from llmct.utils import display_width, pad_string, truncate_string
+from llmct.constants import (
+    COL_WIDTH_MODEL, COL_WIDTH_TIME, COL_WIDTH_ERROR, COL_WIDTH_CONTENT,
+    TABLE_WIDTH, SEPARATOR_WIDTH,
+    DEFAULT_TEST_MESSAGE, DEFAULT_TIMEOUT, DEFAULT_REQUEST_DELAY,
+    DEFAULT_MAX_RETRIES, DEFAULT_OUTPUT_FILE,
+    DEFAULT_TEST_IMAGE_URL, DEFAULT_VISION_MESSAGE,
+    DEFAULT_IMAGE_GEN_PROMPT, DEFAULT_EMBEDDING_TEXT,
+    API_ENDPOINT_MODELS, API_ENDPOINT_CHAT, API_ENDPOINT_EMBEDDINGS,
+    API_ENDPOINT_IMAGES, API_ENDPOINT_AUDIO_TRANSCRIPTIONS, API_ENDPOINT_AUDIO_SPEECH,
+    ERROR_CATEGORIES, HTTP_OK, HTTP_UNAUTHORIZED, HTTP_TOO_MANY_REQUESTS, HTTP_METHOD_NOT_ALLOWED
+)
 
 logger = get_logger()
 
@@ -33,38 +44,12 @@ if sys.platform == 'win32':
         sys.stderr = codecs.getwriter('utf-8')(sys.stderr.buffer, 'strict')
 
 
-def display_width(text: str) -> int:
-    """计算字符串的实际显示宽度（中文字符算2个宽度）"""
-    width = 0
-    for char in text:
-        if unicodedata.east_asian_width(char) in ('F', 'W'):
-            width += 2
-        else:
-            width += 1
-    return width
-
-
-def pad_string(text: str, width: int, align: str = 'left') -> str:
-    """根据显示宽度填充字符串"""
-    text_width = display_width(text)
-    padding = width - text_width
-    
-    if padding <= 0:
-        return text
-    
-    if align == 'center':
-        left_pad = padding // 2
-        right_pad = padding - left_pad
-        return ' ' * left_pad + text + ' ' * right_pad
-    elif align == 'right':
-        return ' ' * padding + text
-    else:  # left
-        return text + ' ' * padding
+# display_width 和 pad_string 已移至 llmct.utils.text_utils
+# 直接从 llmct.utils 导入使用
 
 
 class ModelTester:
     def __init__(self, api_key: str, base_url: str, timeout: int = 30, 
-                 cache_enabled: bool = True, cache_duration: int = 24,
                  request_delay: float = 1.0, max_retries: int = 3):
         self.api_key = api_key
         self.base_url = base_url.rstrip('/')
@@ -79,12 +64,6 @@ class ModelTester:
         # 使用requests.Session提升性能
         self.session = requests.Session()
         self.session.headers.update(self.headers)
-        
-        # 使用优化的SQLite缓存（25倍速度提升）
-        self.cache = SQLiteCache(
-            db_file='test_cache.db',
-            cache_duration_hours=cache_duration
-        ) if cache_enabled else None
         
         # 使用模型分类器
         self.classifier = ModelClassifier()
@@ -102,8 +81,6 @@ class ModelTester:
         """上下文管理器出口"""
         if self.session:
             self.session.close()
-        if self.cache:
-            self.cache.flush()  # 刷新缓冲区
     
     def validate_api_credentials(self) -> Tuple[bool, str]:
         """
@@ -113,17 +90,17 @@ class ModelTester:
             (是否有效, 错误消息或成功消息)
         """
         try:
-            url = f"{self.base_url}/v1/models"
+            url = f"{self.base_url}{API_ENDPOINT_MODELS}"
             response = self.session.get(url, timeout=10)
             
-            if response.status_code == 401:
+            if response.status_code == HTTP_UNAUTHORIZED:
                 try:
                     error_data = response.json()
                     error_msg = error_data.get('error', {}).get('message', '认证失败')
                     return False, f"API认证失败: {error_msg}"
                 except:
                     return False, "API认证失败: 401 Unauthorized"
-            elif response.status_code == 200:
+            elif response.status_code == HTTP_OK:
                 data = response.json()
                 model_count = len(data.get('data', []))
                 return True, f"API认证成功，发现 {model_count} 个模型"
@@ -283,7 +260,7 @@ class ModelTester:
     def test_language_model(self, model_id: str, test_message: str = "hello") -> Tuple[bool, float, str, str]:
         """测试语言模型，返回(是否成功, 响应时间, 错误代码, 响应内容)"""
         try:
-            url = f"{self.base_url}/v1/chat/completions"
+            url = f"{self.base_url}{API_ENDPOINT_CHAT}"
             payload = {
                 "model": model_id,
                 "messages": [
@@ -325,11 +302,11 @@ class ModelTester:
             logger.error(f"测试时发生未知错误: {type(e).__name__}: {e}")
             return False, 0, 'UNKNOWN_ERROR', str(e)[:200]
     
-    def test_vision_model(self, model_id: str, test_message: str = "What's in this image?", 
-                          image_url: str = "https://upload.wikimedia.org/wikipedia/commons/thumb/d/dd/Gfp-wisconsin-madison-the-nature-boardwalk.jpg/320px-Gfp-wisconsin-madison-the-nature-boardwalk.jpg") -> Tuple[bool, float, str, str]:
+    def test_vision_model(self, model_id: str, test_message: str = DEFAULT_VISION_MESSAGE, 
+                          image_url: str = DEFAULT_TEST_IMAGE_URL) -> Tuple[bool, float, str, str]:
         """测试视觉模型，返回(是否成功, 响应时间, 错误代码, 响应内容)"""
         try:
-            url = f"{self.base_url}/v1/chat/completions"
+            url = f"{self.base_url}{API_ENDPOINT_CHAT}"
             payload = {
                 "model": model_id,
                 "messages": [
@@ -381,7 +358,7 @@ class ModelTester:
         # 对于音频模型，使用HEAD请求检查端点是否存在
         try:
             # 先尝试ASR端点
-            url = f"{self.base_url}/v1/audio/transcriptions"
+            url = f"{self.base_url}{API_ENDPOINT_AUDIO_TRANSCRIPTIONS}"
             start_time = time.time()
             response = requests.options(url, headers=self.headers, timeout=self.timeout)
             response_time = time.time() - start_time
@@ -390,7 +367,7 @@ class ModelTester:
                 return True, response_time, '', '音频端点可用'
             else:
                 # 尝试TTS端点
-                url = f"{self.base_url}/v1/audio/speech"
+                url = f"{self.base_url}{API_ENDPOINT_AUDIO_SPEECH}"
                 response = requests.options(url, headers=self.headers, timeout=self.timeout)
                 if response.status_code in [200, 405]:
                     return True, response_time, '', 'TTS端点可用'
@@ -409,10 +386,10 @@ class ModelTester:
             logger.error(f"测试时发生未知错误: {type(e).__name__}: {e}")
             return False, 0, 'UNKNOWN_ERROR', str(e)[:200]
     
-    def test_embedding_model(self, model_id: str, test_text: str = "hello world") -> Tuple[bool, float, str, str]:
+    def test_embedding_model(self, model_id: str, test_text: str = DEFAULT_EMBEDDING_TEXT) -> Tuple[bool, float, str, str]:
         """测试Embedding模型，返回(是否成功, 响应时间, 错误代码, 响应内容)"""
         try:
-            url = f"{self.base_url}/v1/embeddings"
+            url = f"{self.base_url}{API_ENDPOINT_EMBEDDINGS}"
             payload = {
                 "model": model_id,
                 "input": test_text
@@ -450,10 +427,10 @@ class ModelTester:
             logger.error(f"测试时发生未知错误: {type(e).__name__}: {e}")
             return False, 0, 'UNKNOWN_ERROR', str(e)[:200]
     
-    def test_image_generation_model(self, model_id: str, prompt: str = "a white cat") -> Tuple[bool, float, str, str]:
+    def test_image_generation_model(self, model_id: str, prompt: str = DEFAULT_IMAGE_GEN_PROMPT) -> Tuple[bool, float, str, str]:
         """测试图像生成模型，返回(是否成功, 响应时间, 错误代码, 响应内容)"""
         try:
-            url = f"{self.base_url}/v1/images/generations"
+            url = f"{self.base_url}{API_ENDPOINT_IMAGES}"
             payload = {
                 "model": model_id,
                 "prompt": prompt,
@@ -580,39 +557,7 @@ class ModelTester:
         print(f"\n{'总失败数':<20} {' '*25} {fail_count:<10} {100.0:>6.1f}%{' '*8} {(fail_count/total_models*100):>6.1f}%")
         print(f"{'='*110}\n")
     
-    def print_failure_statistics(self, threshold: int = 3):
-        """打印持续失败模型统计"""
-        if not self.cache:
-            return
-        
-        persistent = self.cache.get_persistent_failures(threshold)
-        if not persistent:
-            return
-        
-        print(f"\n{'='*110}")
-        print(f"持续失败模型统计 (失败{threshold}次以上)")
-        print(f"{'='*110}")
-        
-        print(f"\n{'模型ID':<50} {'失败次数':<12} {'最后错误':<20} {'最后失败时间':<25}")
-        print(f"{'-'*110}")
-        
-        for item in persistent:
-            model_id = item['model_id']
-            if len(model_id) > 48:
-                model_id = model_id[:45] + '...'
-            
-            last_failure = item['last_failure']
-            try:
-                # 格式化时间显示
-                dt = datetime.fromisoformat(last_failure)
-                last_failure_str = dt.strftime('%Y-%m-%d %H:%M:%S')
-            except:
-                last_failure_str = last_failure[:25] if last_failure else '-'
-            
-            print(f"{model_id:<50} {item['failure_count']:<12} {item['last_error']:<20} {last_failure_str:<25}")
-        
-        print(f"\n总计持续失败模型: {len(persistent)}")
-        print(f"{'='*110}\n")
+
     
     def format_row(self, model_name: str, success: bool, response_time: float, 
                    error_code: str, content: str, col_widths: dict) -> str:
@@ -688,10 +633,76 @@ class ModelTester:
             logger.warning(f"保存结果失败: {e}")
             print(f"[警告] 保存结果失败: {e}")
     
+    def generate_analysis_report(self, results: List[Dict], output_file: str = None):
+        """
+        自动生成分析报告
+        
+        Args:
+            results: 测试结果列表
+            output_file: 输出文件路径（用于确定分析报告文件名）
+        """
+        if not results:
+            return
+        
+        try:
+            print(f"\n{'='*110}")
+            print("📊 测试分析报告")
+            print(f"{'='*110}\n")
+            
+            analyzer = ResultAnalyzer()
+            
+            # 1. 健康度评分
+            health_score = analyzer.calculate_health_score(results)
+            print(f"🏥 API健康度评分")
+            print(f"{'-'*110}")
+            print(f"综合评分: {health_score['score']}/100 (等级: {health_score['grade']})")
+            print(f"  - 成功率评分: {health_score['details']['success_score']:.1f}/100")
+            print(f"  - 响应速度评分: {health_score['details']['speed_score']:.1f}/100")
+            print(f"  - 稳定性评分: {health_score['details']['stability_score']:.1f}/100")
+            print(f"平均响应时间: {health_score['details']['avg_response_time']:.2f}秒")
+            print()
+            
+            # 2. 告警检查
+            alerts = analyzer.check_alerts(results)
+            if alerts:
+                print(f"⚠️  告警信息")
+                print(f"{'-'*110}")
+                for alert in alerts:
+                    severity_icon = "🔴" if alert['severity'] == 'high' else "🟡"
+                    print(f"{severity_icon} [{alert['severity'].upper()}] {alert['message']}")
+                print()
+            else:
+                print(f"✅ 无告警\n")
+            
+            # 3. 保存详细分析报告到JSON
+            if output_file:
+                # 生成分析报告文件名
+                base_name = os.path.splitext(output_file)[0]
+                analysis_file = f"{base_name}_analysis.json"
+                
+                import json
+                analysis_data = {
+                    'health_score': health_score,
+                    'alerts': alerts,
+                    'timestamp': datetime.now().isoformat()
+                }
+                
+                with open(analysis_file, 'w', encoding='utf-8') as f:
+                    json.dump(analysis_data, f, ensure_ascii=False, indent=2)
+                
+                logger.info(f"分析报告已保存到: {analysis_file}")
+                print(f"[信息] 详细分析报告已保存到: {analysis_file}")
+            
+            print(f"{'='*110}\n")
+            sys.stdout.flush()
+            
+        except Exception as e:
+            logger.warning(f"生成分析报告失败: {e}")
+            print(f"[警告] 生成分析报告失败: {e}")
+    
     def test_all_models(self, test_message: str = "hello", output_file: str = None, 
                         test_vision: bool = True, test_audio: bool = True, 
-                        test_embedding: bool = True, test_image_gen: bool = True,
-                        only_failed: bool = False, max_failures: int = 0):
+                        test_embedding: bool = True, test_image_gen: bool = True):
         """
         测试所有模型
         
@@ -702,79 +713,37 @@ class ModelTester:
             test_audio: 是否测试音频模型（需要实际API调用）
             test_embedding: 是否测试Embedding模型（需要实际API调用）
             test_image_gen: 是否测试图像生成模型（需要实际API调用）
-            only_failed: 是否只测试上次失败的模型
-            max_failures: 失败次数阈值，超过此值的模型将被跳过(0表示不限制)
         """
         test_start_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        header_width = 110
-        print(f"\n{'='*header_width}")
-        print(f"大模型连通性和可用性测试 [增强版]")
+        print(f"\n{'='*SEPARATOR_WIDTH}")
+        print(f"大模型连通性和可用性测试 [精简版]")
         print(f"Base URL: {self.base_url}")
         print(f"测试时间: {test_start_time}")
         print(f"测试配置: 视觉={test_vision}, 音频={test_audio}, 嵌入={test_embedding}, 图像生成={test_image_gen}")
-        
-        # 显示缓存状态
-        if self.cache:
-            cache_stats = self.cache.get_stats()
-            cached_models = cache_stats['total']
-            valid_cache = cache_stats['success_count']
-            cache_hours = int(self.cache.cache_duration.total_seconds() // 3600)
-            print(f"缓存状态: 启用 (有效记录: {valid_cache}/{cached_models}, 有效期: {cache_hours}小时)")
-        else:
-            print(f"缓存状态: 禁用")
-        
-        print(f"{'='*header_width}\n")
+        print(f"{'='*SEPARATOR_WIDTH}\n")
         sys.stdout.flush()
         
         print("正在获取模型列表...")
         sys.stdout.flush()
-        all_models = self.get_models()
+        models = self.get_models()
         
-        if not all_models:
+        if not models:
             print("[错误] 未获取到任何模型，请检查API配置")
             sys.stdout.flush()
             return
         
-        # 过滤模型列表
-        if only_failed and self.cache:
-            # 只测试上次失败的模型
-            failed_model_ids = set(self.cache.get_failed_models())
-            models = [m for m in all_models if m.get('id', m.get('model', '')) in failed_model_ids]
-            print(f"共发现 {len(all_models)} 个模型，筛选出 {len(models)} 个失败模型进行测试")
-            print(f"测试模式: 仅测试失败模型")
-            sys.stdout.flush()
-            
-            # 检查是否有失败模型
-            if len(models) == 0:
-                print("\n[提示] 没有找到失败的模型！")
-                print("可能的原因：")
-                print("  1. 这是首次运行，尚未建立测试记录")
-                print("  2. 所有模型都测试成功了")
-                print("  3. 缓存已被清除")
-                print("\n建议：")
-                print("  - 先运行一次全量测试：python test_models.py --api-key xxx --base-url xxx")
-                print("  - 或者移除 --only-failed 参数")
-                return
-        else:
-            models = all_models
-            print(f"共发现 {len(models)} 个模型")
-            print(f"测试模式: 全量测试")
-            sys.stdout.flush()
+        print(f"共发现 {len(models)} 个模型\n")
+        sys.stdout.flush()
         
-        if max_failures > 0:
-            print(f"失败阈值: 跳过失败{max_failures}次以上的模型")
-        
-        print()
-        
-        # 定义列宽（紧凑模式）
+        # 定义列宽（使用常量）
         col_widths = {
-            'model': 45,
-            'time': 9,
-            'error': 12,
-            'content': 40
+            'model': COL_WIDTH_MODEL,
+            'time': COL_WIDTH_TIME,
+            'error': COL_WIDTH_ERROR,
+            'content': COL_WIDTH_CONTENT
         }
         
-        total_width = sum(col_widths.values()) + 6  # 6 = 3个分隔符 " | " 的宽度
+        total_width = TABLE_WIDTH
         
         # 打印表头
         print(f"{'='*total_width}")
@@ -790,72 +759,38 @@ class ModelTester:
         
         success_count = 0
         fail_count = 0
-        cached_count = 0
-        skipped_count = 0
         results = []
         
         # 边测试边输出
         for idx, model in enumerate(models, 1):
             model_id = model.get('id', model.get('model', 'unknown'))
             
-            # 检查是否超过失败阈值
-            if max_failures > 0 and self.cache:
-                failure_count = self.cache.get_failure_count(model_id)
-                if failure_count >= max_failures:
-                    # 跳过该模型
-                    skipped_count += 1
-                    results.append({
-                        'model': model_id,
-                        'success': False,
-                        'response_time': 0,
-                        'error_code': 'SKIPPED',
-                        'content': f'已跳过(失败{failure_count}次)'
-                    })
-                    # 输出跳过信息
-                    row = self.format_row(model_id, False, 0, 'SKIPPED', 
-                                         f'已跳过(失败{failure_count}次)', col_widths)
-                    print(row)
-                    continue
+            # 分类模型并使用对应的测试方法
+            model_type = self.classify_model(model_id)
             
-            # 检查缓存
-            if self.cache and self.cache.is_cached(model_id):
-                cached_result = self.cache.get_cached_result(model_id)
-                success = cached_result['success']
-                response_time = cached_result['response_time']
-                error_code = cached_result.get('error_code', '')
-                content = f"[缓存] {cached_result['content']}"
-                cached_count += 1
+            if model_type == 'language':
+                success, response_time, error_code, content = self.test_language_model(model_id, test_message)
+            elif model_type == 'vision' and test_vision:
+                success, response_time, error_code, content = self.test_vision_model(model_id)
+            elif model_type == 'audio' and test_audio:
+                success, response_time, error_code, content = self.test_audio_model(model_id)
+            elif model_type == 'embedding' and test_embedding:
+                success, response_time, error_code, content = self.test_embedding_model(model_id)
+            elif model_type == 'image_generation' and test_image_gen:
+                success, response_time, error_code, content = self.test_image_generation_model(model_id)
             else:
-                # 分类模型并使用对应的测试方法
-                model_type = self.classify_model(model_id)
-                
-                if model_type == 'language':
-                    success, response_time, error_code, content = self.test_language_model(model_id, test_message)
-                elif model_type == 'vision' and test_vision:
-                    success, response_time, error_code, content = self.test_vision_model(model_id)
-                elif model_type == 'audio' and test_audio:
-                    success, response_time, error_code, content = self.test_audio_model(model_id)
-                elif model_type == 'embedding' and test_embedding:
-                    success, response_time, error_code, content = self.test_embedding_model(model_id)
-                elif model_type == 'image_generation' and test_image_gen:
-                    success, response_time, error_code, content = self.test_image_generation_model(model_id)
+                # 跳过或使用基础连通性测试
+                if model_type in ['vision', 'audio', 'embedding', 'image_generation']:
+                    # 如果禁用了该类型的测试，使用简单连通性测试
+                    success, response_time, error_code, content = self.test_connectivity(model_id)
+                    if success:
+                        content = f'[{model_type}模型] {content}'
                 else:
-                    # 跳过或使用基础连通性测试
-                    if model_type in ['vision', 'audio', 'embedding', 'image_generation']:
-                        # 如果禁用了该类型的测试，使用简单连通性测试
-                        success, response_time, error_code, content = self.test_connectivity(model_id)
-                        if success:
-                            content = f'[{model_type}模型] {content}'
-                    else:
-                        # 其他类型使用基础连通性测试
-                        success, response_time, error_code, content = self.test_connectivity(model_id)
-                
-                # 更新缓存
-                if self.cache:
-                    self.cache.update_cache(model_id, success, response_time, error_code, content)
+                    # 其他类型使用基础连通性测试
+                    success, response_time, error_code, content = self.test_connectivity(model_id)
             
-            # 更新错误统计（跳过的模型不计入错误统计）
-            if not success and error_code != 'SKIPPED':
+            # 更新错误统计
+            if not success:
                 self.update_error_stats(error_code)
             
             if success:
@@ -883,72 +818,41 @@ class ModelTester:
         
         # 打印统计信息
         print(f"{'='*total_width}")
-        cache_info = f" | 缓存命中: {cached_count}" if cached_count > 0 else ""
-        skip_info = f" | 跳过: {skipped_count}" if skipped_count > 0 else ""
         success_rate = (success_count/len(models)*100) if len(models) > 0 else 0
-        print(f"测试完成 | 总计: {len(models)} | 成功: {success_count} | 失败: {fail_count}{cache_info}{skip_info} | 成功率: {success_rate:.1f}%")
+        print(f"测试完成 | 总计: {len(models)} | 成功: {success_count} | 失败: {fail_count} | 成功率: {success_rate:.1f}%")
         print(f"{'='*total_width}\n")
         sys.stdout.flush()
         
         # 打印错误统计
         self.print_error_statistics(len(models), success_count)
         
-        # 打印持续失败模型统计
-        if self.cache and not only_failed:
-            # 只在全量测试时显示持续失败统计
-            self.print_failure_statistics(threshold=3)
-        
-        # 保存缓存
-        if self.cache:
-            self.cache.flush()
-            failed_models = len(self.cache.get_failed_models())
-            persistent_failures = len(self.cache.get_persistent_failures(3))
-            cache_stats = self.cache.get_stats()
-            logger.info(f"缓存已保存: {cache_stats['total']} 条记录")
-            logger.info(f"失败模型: {failed_models} 个，持续失败(≥3次): {persistent_failures} 个")
-            print(f"[信息] 缓存已保存 (共 {cache_stats['total']} 条记录)")
-            print(f"[信息] 失败模型: {failed_models} 个，持续失败(≥3次): {persistent_failures} 个\n")
-        
         # 保存结果到文件
         if output_file:
             self.save_results(results, output_file, test_start_time)
+        
+        # 自动生成分析报告
+        self.generate_analysis_report(results, output_file)
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description='大模型连通性和可用性测试工具',
+        description='大模型连通性和可用性测试工具 - 精简版',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 示例用法:
-  # 基础测试（全量）
+  # 基础测试
   python mct.py --api-key sk-xxx --base-url https://api.openai.com
-  
-  # [NEW] 仅测试上次失败的模型
-  python mct.py --api-key sk-xxx --base-url https://api.openai.com --only-failed
-  
-  # [NEW] 跳过失败5次以上的模型
-  python mct.py --api-key sk-xxx --base-url https://api.openai.com --max-failures 5
-  
-  # [NEW] 组合使用：只测试失败模型，跳过失败3次以上的
-  python mct.py --api-key sk-xxx --base-url https://api.openai.com --only-failed --max-failures 3
-  
-  # [NEW] 重置失败计数
-  python mct.py --api-key sk-xxx --base-url https://api.openai.com --reset-failures
   
   # 自定义测试消息
   python mct.py --api-key sk-xxx --base-url https://api.openai.com --message "你好"
   
-  # 禁用缓存
-  python mct.py --api-key sk-xxx --base-url https://api.openai.com --no-cache
+  # 保存结果到不同格式
+  python mct.py --api-key sk-xxx --base-url https://api.openai.com --output results.json
+  python mct.py --api-key sk-xxx --base-url https://api.openai.com --output results.html
+  python mct.py --api-key sk-xxx --base-url https://api.openai.com --output results.csv
   
-  # 自定义缓存有效期（48小时）
-  python mct.py --api-key sk-xxx --base-url https://api.openai.com --cache-duration 48
-  
-  # 清除缓存后重新测试
-  python mct.py --api-key sk-xxx --base-url https://api.openai.com --clear-cache
-  
-  # 保存结果到文件
-  python mct.py --api-key sk-xxx --base-url https://api.openai.com --output my_results.txt
+  # 跳过特定类型的模型测试
+  python mct.py --api-key sk-xxx --base-url https://api.openai.com --skip-vision --skip-audio
         """
     )
     
@@ -1022,69 +926,16 @@ def main():
         help='跳过图像生成模型的实际测试（仅连通性测试）'
     )
     
-    parser.add_argument(
-        '--no-cache',
-        action='store_true',
-        help='禁用缓存机制'
-    )
-    
-    parser.add_argument(
-        '--cache-duration',
-        type=int,
-        default=24,
-        help='缓存有效期（小时），默认24小时'
-    )
-    
-    parser.add_argument(
-        '--clear-cache',
-        action='store_true',
-        help='清除缓存文件后开始测试'
-    )
-    
-    parser.add_argument(
-        '--only-failed',
-        action='store_true',
-        help='仅测试上次失败的模型'
-    )
-    
-    parser.add_argument(
-        '--max-failures',
-        type=int,
-        default=0,
-        help='失败次数阈值，超过此值的模型将被跳过(0表示不限制)'
-    )
-    
-    parser.add_argument(
-        '--reset-failures',
-        action='store_true',
-        help='重置所有失败计数'
-    )
-    
     args = parser.parse_args()
-    
-    # 清除缓存
-    if args.clear_cache:
-        cache_file = 'test_cache.json'
-        if os.path.exists(cache_file):
-            os.remove(cache_file)
-            print(f"[信息] 缓存文件已清除\n")
     
     try:
         tester = ModelTester(
             api_key=args.api_key,
             base_url=args.base_url,
             timeout=args.timeout,
-            cache_enabled=not args.no_cache,
-            cache_duration=args.cache_duration,
             request_delay=args.request_delay,
             max_retries=args.max_retries
         )
-        
-        # 重置失败计数
-        if args.reset_failures and tester.cache:
-            tester.cache.reset_failure_counts()
-            tester.cache.flush()
-            print(f"[信息] 失败计数已重置\n")
         
         tester.test_all_models(
             test_message=args.message, 
@@ -1092,9 +943,7 @@ def main():
             test_vision=not args.skip_vision,
             test_audio=not args.skip_audio,
             test_embedding=not args.skip_embedding,
-            test_image_gen=not args.skip_image_gen,
-            only_failed=args.only_failed,
-            max_failures=args.max_failures
+            test_image_gen=not args.skip_image_gen
         )
     except KeyboardInterrupt:
         print("\n\n测试已取消")
