@@ -20,9 +20,10 @@ class Logger:
             datefmt='%Y-%m-%d %H:%M:%S'
         )
         
-        # 控制台输出
+        # 控制台输出 - 仅显示 ERROR 及以上级别，避免打乱测试显示
         console_handler = logging.StreamHandler(sys.stdout)
         console_handler.setFormatter(formatter)
+        console_handler.setLevel(logging.ERROR)  # 控制台只显示错误和严重错误
         self.logger.addHandler(console_handler)
         
         # 文件输出（可选）

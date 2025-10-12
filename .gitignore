@@ -1,6 +1,7 @@
 # 测试结果文件
 test_results.txt
 test_results_*.txt
+test_results_*.html
 *.result.txt
 test_analysis.md
 *.html
@@ -9,6 +10,41 @@ test_analysis.md
 !example_*.json
 !example_*.csv
 !example_*.html
+!example_output.html
+!package.json
+!package-lock.json
+
+# 临时分析和调试文件
+*_ANALYSIS.md
+*_TEST_*.md
+*_SUMMARY.md
+*_FIX.md
+*_OPTIMIZATION*.md
+*_COMPLETE.md
+*_REPORT.md
+*_RECOMMENDATIONS.md
+analyze_*.py
+check_*.py
+diagnose_*.py
+quick_test.py
+test_realtime_output.py
+one.txt
+*_analysis.json
+api_*.json
+test_config.yaml
+
+# 临时配置文件
+config_conservative.yaml
+config_one_*.yaml
+config_optimized*.yaml
+config_quick_test.yaml
+api_test_config.yaml
+
+# 保留重要文档
+!FINAL_TEST_ANALYSIS.md
+!PROJECT_ANALYSIS.md
+!OPTIMIZATION_SUMMARY.md
+!API_TEST_SUMMARY.md
 
 # 缓存文件
 test_cache.json
@@ -18,6 +54,11 @@ test_cache.db
 test_cache_*.db
 *.db
 !schema.db
+
+# 临时调试文件
+test_api_debug.py
+*_debug.py
+*_temp.py
 
 # Python缓存
 __pycache__/

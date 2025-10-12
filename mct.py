@@ -9,6 +9,7 @@
 import argparse
 import sys
 import time
+import os
 from typing import List, Dict, Tuple
 import requests
 from datetime import datetime
@@ -26,6 +27,7 @@ logger = get_logger()
 if sys.platform == 'win32':
     import codecs
     if hasattr(sys.stdout, 'buffer'):
+        # 使用 line_buffering=False 确保立即输出（将在代码中使用 flush）
         sys.stdout = codecs.getwriter('utf-8')(sys.stdout.buffer, 'strict')
     if hasattr(sys.stderr, 'buffer'):
         sys.stderr = codecs.getwriter('utf-8')(sys.stderr.buffer, 'strict')
@@ -68,12 +70,15 @@ class ModelTester:
         self.base_url = base_url.rstrip('/')
         self.timeout = timeout
         
-        # 使用requests.Session提升性能
-        self.session = requests.Session()
-        self.session.headers.update({
+        # 请求头
+        self.headers = {
             'Authorization': f'Bearer {api_key}',
             'Content-Type': 'application/json'
-        })
+        }
+        
+        # 使用requests.Session提升性能
+        self.session = requests.Session()
+        self.session.headers.update(self.headers)
         
         # 使用优化的SQLite缓存（25倍速度提升）
         self.cache = SQLiteCache(
@@ -131,6 +136,33 @@ class ModelTester:
         except Exception as e:
             return False, f"连接失败: {str(e)}"
     
+    def _parse_http_error(self, response: requests.Response) -> Tuple[str, str]:
+        """
+        解析 HTTP 错误响应
+        
+        Args:
+            response: Response 对象
+            
+        Returns:
+            (错误代码, 错误消息)
+        """
+        error_code = f'HTTP_{response.status_code}'
+        error_msg = ''
+        
+        try:
+            error_data = response.json()
+            if 'error' in error_data:
+                if isinstance(error_data['error'], dict):
+                    error_msg = error_data['error'].get('message', '')
+                else:
+                    error_msg = str(error_data['error'])
+            else:
+                error_msg = str(error_data)[:200]
+        except:
+            error_msg = response.text[:200] if response.text else ''
+        
+        return error_code, error_msg
+    
     def _make_request_with_retry(self, method: str, url: str, **kwargs) -> requests.Response:
         """
         发送HTTP请求，自动处理429错误重试（指数退避）
@@ -150,11 +182,14 @@ class ModelTester:
         
         for attempt in range(self.max_retries + 1):
             try:
+                # 从 kwargs 中获取 timeout，如果没有则使用默认值
+                timeout = kwargs.pop('timeout', self.timeout)
+                
                 # 发送请求（使用Session连接复用）
                 if method.upper() == 'GET':
-                    response = self.session.get(url, timeout=self.timeout, **kwargs)
+                    response = self.session.get(url, timeout=timeout, **kwargs)
                 elif method.upper() == 'POST':
-                    response = self.session.post(url, timeout=self.timeout, **kwargs)
+                    response = self.session.post(url, timeout=timeout, **kwargs)
                 else:
                     raise ValueError(f"Unsupported HTTP method: {method}")
                 
@@ -220,6 +255,7 @@ class ModelTester:
         
         logger.info(msg)
         print(f"[信息] {msg}\n")
+        sys.stdout.flush()
         
         try:
             url = f"{self.base_url}/v1/models"
@@ -234,6 +270,7 @@ class ModelTester:
         except Exception as e:
             logger.error(f"获取模型列表失败: {e}")
             print(f"[错误] 获取模型列表失败: {e}")
+            sys.stdout.flush()
             return []
     
     def classify_model(self, model_id: str) -> str:
@@ -277,12 +314,16 @@ class ModelTester:
         except requests.exceptions.Timeout:
             return False, self.timeout, 'TIMEOUT', ''
         except requests.exceptions.HTTPError as e:
-            error_code = f'HTTP_{e.response.status_code}' if hasattr(e, 'response') else 'HTTP_ERROR'
-            return False, 0, error_code, ''
-        except requests.exceptions.RequestException:
-            return False, 0, 'REQUEST_FAILED', ''
-        except Exception:
-            return False, 0, 'UNKNOWN_ERROR', ''
+            if hasattr(e, 'response') and e.response is not None:
+                error_code, error_msg = self._parse_http_error(e.response)
+                return False, 0, error_code, error_msg
+            else:
+                return False, 0, 'HTTP_ERROR', str(e)[:200]
+        except requests.exceptions.RequestException as e:
+            return False, 0, 'REQUEST_FAILED', str(e)[:200]
+        except Exception as e:
+            logger.error(f"测试时发生未知错误: {type(e).__name__}: {e}")
+            return False, 0, 'UNKNOWN_ERROR', str(e)[:200]
     
     def test_vision_model(self, model_id: str, test_message: str = "What's in this image?", 
                           image_url: str = "https://upload.wikimedia.org/wikipedia/commons/thumb/d/dd/Gfp-wisconsin-madison-the-nature-boardwalk.jpg/320px-Gfp-wisconsin-madison-the-nature-boardwalk.jpg") -> Tuple[bool, float, str, str]:
@@ -324,12 +365,16 @@ class ModelTester:
         except requests.exceptions.Timeout:
             return False, self.timeout, 'TIMEOUT', ''
         except requests.exceptions.HTTPError as e:
-            error_code = f'HTTP_{e.response.status_code}' if hasattr(e, 'response') else 'HTTP_ERROR'
-            return False, 0, error_code, ''
-        except requests.exceptions.RequestException:
-            return False, 0, 'REQUEST_FAILED', ''
-        except Exception:
-            return False, 0, 'UNKNOWN_ERROR', ''
+            if hasattr(e, 'response') and e.response is not None:
+                error_code, error_msg = self._parse_http_error(e.response)
+                return False, 0, error_code, error_msg
+            else:
+                return False, 0, 'HTTP_ERROR', str(e)[:200]
+        except requests.exceptions.RequestException as e:
+            return False, 0, 'REQUEST_FAILED', str(e)[:200]
+        except Exception as e:
+            logger.error(f"测试时发生未知错误: {type(e).__name__}: {e}")
+            return False, 0, 'UNKNOWN_ERROR', str(e)[:200]
     
     def test_audio_model(self, model_id: str) -> Tuple[bool, float, str, str]:
         """测试音频模型（Whisper/TTS），返回(是否成功, 响应时间, 错误代码, 响应内容)"""
@@ -353,12 +398,16 @@ class ModelTester:
         except requests.exceptions.Timeout:
             return False, self.timeout, 'TIMEOUT', ''
         except requests.exceptions.HTTPError as e:
-            error_code = f'HTTP_{e.response.status_code}' if hasattr(e, 'response') else 'HTTP_ERROR'
-            return False, 0, error_code, ''
-        except requests.exceptions.RequestException:
-            return False, 0, 'CONN_FAILED', ''
-        except Exception:
-            return False, 0, 'UNKNOWN_ERROR', ''
+            if hasattr(e, 'response') and e.response is not None:
+                error_code, error_msg = self._parse_http_error(e.response)
+                return False, 0, error_code, error_msg
+            else:
+                return False, 0, 'HTTP_ERROR', str(e)[:200]
+        except requests.exceptions.RequestException as e:
+            return False, 0, 'CONN_FAILED', str(e)[:200]
+        except Exception as e:
+            logger.error(f"测试时发生未知错误: {type(e).__name__}: {e}")
+            return False, 0, 'UNKNOWN_ERROR', str(e)[:200]
     
     def test_embedding_model(self, model_id: str, test_text: str = "hello world") -> Tuple[bool, float, str, str]:
         """测试Embedding模型，返回(是否成功, 响应时间, 错误代码, 响应内容)"""
@@ -390,12 +439,16 @@ class ModelTester:
         except requests.exceptions.Timeout:
             return False, self.timeout, 'TIMEOUT', ''
         except requests.exceptions.HTTPError as e:
-            error_code = f'HTTP_{e.response.status_code}' if hasattr(e, 'response') else 'HTTP_ERROR'
-            return False, 0, error_code, ''
-        except requests.exceptions.RequestException:
-            return False, 0, 'REQUEST_FAILED', ''
-        except Exception:
-            return False, 0, 'UNKNOWN_ERROR', ''
+            if hasattr(e, 'response') and e.response is not None:
+                error_code, error_msg = self._parse_http_error(e.response)
+                return False, 0, error_code, error_msg
+            else:
+                return False, 0, 'HTTP_ERROR', str(e)[:200]
+        except requests.exceptions.RequestException as e:
+            return False, 0, 'REQUEST_FAILED', str(e)[:200]
+        except Exception as e:
+            logger.error(f"测试时发生未知错误: {type(e).__name__}: {e}")
+            return False, 0, 'UNKNOWN_ERROR', str(e)[:200]
     
     def test_image_generation_model(self, model_id: str, prompt: str = "a white cat") -> Tuple[bool, float, str, str]:
         """测试图像生成模型，返回(是否成功, 响应时间, 错误代码, 响应内容)"""
@@ -428,12 +481,16 @@ class ModelTester:
         except requests.exceptions.Timeout:
             return False, self.timeout, 'TIMEOUT', ''
         except requests.exceptions.HTTPError as e:
-            error_code = f'HTTP_{e.response.status_code}' if hasattr(e, 'response') else 'HTTP_ERROR'
-            return False, 0, error_code, ''
-        except requests.exceptions.RequestException:
-            return False, 0, 'REQUEST_FAILED', ''
-        except Exception:
-            return False, 0, 'UNKNOWN_ERROR', ''
+            if hasattr(e, 'response') and e.response is not None:
+                error_code, error_msg = self._parse_http_error(e.response)
+                return False, 0, error_code, error_msg
+            else:
+                return False, 0, 'HTTP_ERROR', str(e)[:200]
+        except requests.exceptions.RequestException as e:
+            return False, 0, 'REQUEST_FAILED', str(e)[:200]
+        except Exception as e:
+            logger.error(f"测试时发生未知错误: {type(e).__name__}: {e}")
+            return False, 0, 'UNKNOWN_ERROR', str(e)[:200]
     
     def test_connectivity(self, model_id: str) -> Tuple[bool, float, str, str]:
         """测试基础连通性，返回(是否成功, 响应时间, 错误代码, 响应内容)"""
@@ -457,12 +514,16 @@ class ModelTester:
         except requests.exceptions.Timeout:
             return False, self.timeout, 'TIMEOUT', ''
         except requests.exceptions.HTTPError as e:
-            error_code = f'HTTP_{e.response.status_code}' if hasattr(e, 'response') else 'HTTP_ERROR'
-            return False, 0, error_code, ''
-        except requests.exceptions.RequestException:
-            return False, 0, 'CONN_FAILED', ''
-        except Exception:
-            return False, 0, 'UNKNOWN_ERROR', ''
+            if hasattr(e, 'response') and e.response is not None:
+                error_code, error_msg = self._parse_http_error(e.response)
+                return False, 0, error_code, error_msg
+            else:
+                return False, 0, 'HTTP_ERROR', str(e)[:200]
+        except requests.exceptions.RequestException as e:
+            return False, 0, 'CONN_FAILED', str(e)[:200]
+        except Exception as e:
+            logger.error(f"测试时发生未知错误: {type(e).__name__}: {e}")
+            return False, 0, 'UNKNOWN_ERROR', str(e)[:200]
     
     def categorize_error(self, error_code: str) -> str:
         """错误分类"""
@@ -618,8 +679,8 @@ class ModelTester:
             }
             
             # 使用Reporter生成报告
-            reporter = Reporter(results)
-            reporter.save(output_file, format=format_type, metadata=metadata)
+            reporter = Reporter(self.base_url)
+            reporter.save_report(results, output_file, format=format_type)
             
             logger.info(f"测试结果已保存到: {output_file} (格式: {format_type})")
             print(f"[信息] 测试结果已保存到: {output_file}")
@@ -654,20 +715,24 @@ class ModelTester:
         
         # 显示缓存状态
         if self.cache:
-            cached_models = len(self.cache.cache)
-            valid_cache = sum(1 for m in self.cache.cache.values() if m.get('success', False))
+            cache_stats = self.cache.get_stats()
+            cached_models = cache_stats['total']
+            valid_cache = cache_stats['success_count']
             cache_hours = int(self.cache.cache_duration.total_seconds() // 3600)
             print(f"缓存状态: 启用 (有效记录: {valid_cache}/{cached_models}, 有效期: {cache_hours}小时)")
         else:
             print(f"缓存状态: 禁用")
         
         print(f"{'='*header_width}\n")
+        sys.stdout.flush()
         
         print("正在获取模型列表...")
+        sys.stdout.flush()
         all_models = self.get_models()
         
         if not all_models:
             print("[错误] 未获取到任何模型，请检查API配置")
+            sys.stdout.flush()
             return
         
         # 过滤模型列表
@@ -677,6 +742,7 @@ class ModelTester:
             models = [m for m in all_models if m.get('id', m.get('model', '')) in failed_model_ids]
             print(f"共发现 {len(all_models)} 个模型，筛选出 {len(models)} 个失败模型进行测试")
             print(f"测试模式: 仅测试失败模型")
+            sys.stdout.flush()
             
             # 检查是否有失败模型
             if len(models) == 0:
@@ -693,6 +759,7 @@ class ModelTester:
             models = all_models
             print(f"共发现 {len(models)} 个模型")
             print(f"测试模式: 全量测试")
+            sys.stdout.flush()
         
         if max_failures > 0:
             print(f"失败阈值: 跳过失败{max_failures}次以上的模型")
@@ -719,6 +786,7 @@ class ModelTester:
         )
         print(header)
         print(f"{'-'*total_width}")
+        sys.stdout.flush()
         
         success_count = 0
         fail_count = 0
@@ -807,6 +875,7 @@ class ModelTester:
             # 立即输出当前测试结果
             row = self.format_row(model_id, success, response_time, error_code, content, col_widths)
             print(row)
+            sys.stdout.flush()  # 强制刷新输出缓冲区，确保实时显示
             
             # 添加请求之间的延迟，避免触发速率限制
             if idx < len(models) and self.request_delay > 0:
@@ -819,6 +888,7 @@ class ModelTester:
         success_rate = (success_count/len(models)*100) if len(models) > 0 else 0
         print(f"测试完成 | 总计: {len(models)} | 成功: {success_count} | 失败: {fail_count}{cache_info}{skip_info} | 成功率: {success_rate:.1f}%")
         print(f"{'='*total_width}\n")
+        sys.stdout.flush()
         
         # 打印错误统计
         self.print_error_statistics(len(models), success_count)
@@ -830,12 +900,13 @@ class ModelTester:
         
         # 保存缓存
         if self.cache:
-            self.cache.save_cache()
+            self.cache.flush()
             failed_models = len(self.cache.get_failed_models())
             persistent_failures = len(self.cache.get_persistent_failures(3))
-            logger.info(f"缓存已保存: {len(self.cache.get_stats()['total'])} 条记录")
+            cache_stats = self.cache.get_stats()
+            logger.info(f"缓存已保存: {cache_stats['total']} 条记录")
             logger.info(f"失败模型: {failed_models} 个，持续失败(≥3次): {persistent_failures} 个")
-            print(f"[信息] 缓存已保存 (共 {len(self.cache.get_stats()['total'])} 条记录)")
+            print(f"[信息] 缓存已保存 (共 {cache_stats['total']} 条记录)")
             print(f"[信息] 失败模型: {failed_models} 个，持续失败(≥3次): {persistent_failures} 个\n")
         
         # 保存结果到文件
@@ -1012,7 +1083,7 @@ def main():
         # 重置失败计数
         if args.reset_failures and tester.cache:
             tester.cache.reset_failure_counts()
-            tester.cache.save_cache()
+            tester.cache.flush()
             print(f"[信息] 失败计数已重置\n")
         
         tester.test_all_models(
