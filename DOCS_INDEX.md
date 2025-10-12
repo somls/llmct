@@ -31,10 +31,36 @@
   *适合：* 遇到测试错误的用户
 
 ### 性能优化
-- **[docs/OPTIMIZATION.md](docs/OPTIMIZATION.md)** ⭐ NEW  
+- **[docs/OPTIMIZATION.md](docs/OPTIMIZATION.md)**  
   *内容：* 优化功能说明、使用指南、性能对比、故障排查  
   *适合：* 需要高性能测试的用户  
   *版本：* v2.1.0+
+
+- **[FINAL_TEST_ANALYSIS.md](FINAL_TEST_ANALYSIS.md)** ⭐  
+  *内容：* 真实API测试结果、性能分析、最佳实践、常见问题解答  
+  *适合：* 需要针对特定API优化测试策略的用户  
+  *版本：* v2.2.0+
+
+### 重构文档 (v2.2.1+) 🏗️
+- **[PROJECT_ANALYSIS.md](PROJECT_ANALYSIS.md)** - 项目深度分析  
+  *内容：* 完整代码分析、架构评估、优化建议、技术债务  
+  *适合：* 开发者、贡献者
+
+- **[REFACTORING_GUIDE.md](REFACTORING_GUIDE.md)** - 重构指南  
+  *内容：* 详细重构步骤、代码示例、测试验证、最佳实践  
+  *适合：* 想了解重构过程的开发者
+
+- **[REFACTORING_COMPLETE.md](REFACTORING_COMPLETE.md)** - Phase 1报告  
+  *内容：* 核心重构成果、性能提升数据、测试结果  
+  *适合：* 了解重构第一阶段成果
+
+- **[REFACTORING_PHASE2.md](REFACTORING_PHASE2.md)** - Phase 2报告  
+  *内容：* 功能增强、日志集成、Reporter优化  
+  *适合：* 了解重构第二阶段成果
+
+- **[OPTIMIZATION_SUMMARY.md](OPTIMIZATION_SUMMARY.md)** - 优化执行摘要  
+  *内容：* 核心问题、关键指标、实施路线、收益总结  
+  *适合：* 快速了解优化全貌
 
 ### 版本升级
 - **[docs/UPGRADE.md](docs/UPGRADE.md)** - 升级指南  
@@ -55,10 +81,10 @@
 👉 阅读 [README.md](README.md) → [docs/USAGE.md](docs/USAGE.md)
 
 #### 🚀 提升性能
-👉 阅读 [docs/OPTIMIZATION.md](docs/OPTIMIZATION.md)
+👉 阅读 [docs/OPTIMIZATION.md](docs/OPTIMIZATION.md) → [FINAL_TEST_ANALYSIS.md](FINAL_TEST_ANALYSIS.md)
 
 #### ❌ 解决错误
-👉 查看 [docs/ERRORS.md](docs/ERRORS.md)
+👉 查看 [docs/ERRORS.md](docs/ERRORS.md) → [FINAL_TEST_ANALYSIS.md](FINAL_TEST_ANALYSIS.md)
 
 #### 📈 优化测试策略
 👉 阅读 [docs/FAILURE_TRACKING.md](docs/FAILURE_TRACKING.md)
@@ -78,14 +104,26 @@ LLMCT/
 ├── README.md                    # 项目主页
 ├── CHANGELOG.md                 # 版本历史
 ├── DOCS_INDEX.md               # 本文档
+├── FINAL_TEST_ANALYSIS.md      # 实测分析报告 [v2.2.0]
+├── PROJECT_ANALYSIS.md         # 项目深度分析 [v2.2.1]
+├── REFACTORING_GUIDE.md        # 重构指南 [v2.2.1]
+├── REFACTORING_COMPLETE.md     # Phase 1报告 [v2.2.1]
+├── REFACTORING_PHASE2.md       # Phase 2报告 [v2.2.1]
+├── OPTIMIZATION_SUMMARY.md     # 优化执行摘要 [v2.2.1]
+├── mct.py                       # 同步测试主程序（已重构）
+├── mct_async.py                 # 异步测试主程序 [v2.2.0]
 ├── docs/                        # 详细文档
 │   ├── USAGE.md                # 使用指南
-│   ├── OPTIMIZATION.md         # 优化指南 [NEW]
+│   ├── OPTIMIZATION.md         # 优化指南
 │   ├── UPGRADE.md              # 升级指南
 │   ├── ERRORS.md               # 错误说明
 │   └── FAILURE_TRACKING.md     # 失败追踪
 ├── examples/                    # 代码示例
 │   └── example_usage.py        # 使用示例
+├── llmct/                       # 核心模块（优化后）
+│   ├── core/                   # 核心功能
+│   ├── utils/                  # 工具模块
+│   └── models/                 # 数据模型
 └── tests/                       # 单元测试
     └── ...
 ```
@@ -104,11 +142,11 @@ LLMCT/
 ---
 
 ### 路径 2: 性能优化
-1. [docs/OPTIMIZATION.md](docs/OPTIMIZATION.md) - 20分钟了解优化功能
-2. [docs/USAGE.md](docs/USAGE.md) - 参考高级用法
-3. [CHANGELOG.md](CHANGELOG.md) - 查看优化细节
+1. [FINAL_TEST_ANALYSIS.md](FINAL_TEST_ANALYSIS.md) - 15分钟了解真实测试结果
+2. [docs/OPTIMIZATION.md](docs/OPTIMIZATION.md) - 15分钟了解优化功能
+3. [docs/USAGE.md](docs/USAGE.md) - 参考高级用法
 
-**总计：** 30分钟掌握性能优化
+**总计：** 35分钟掌握性能优化
 
 ---
 
@@ -149,11 +187,13 @@ LLMCT/
 
 | 类型 | 数量 | 说明 |
 |------|------|------|
-| 主文档 | 2个 | README + CHANGELOG |
-| 详细文档 | 5个 | docs/目录 |
+| 主文档 | 3个 | README + CHANGELOG + DOCS_INDEX |
+| 功能文档 | 5个 | docs/目录 |
+| 分析报告 | 1个 | FINAL_TEST_ANALYSIS |
+| 重构文档 | 5个 | 重构相关文档 (v2.2.1) |
 | 代码示例 | 1个 | examples/目录 |
-| 测试脚本 | 2个 | 测试相关 |
-| **总计** | **10个** | **完整文档体系** |
+| 测试脚本 | 多个 | tests/目录 |
+| **总计** | **15+个** | **完整文档体系** |
 
 ---
 
@@ -236,6 +276,6 @@ pytest tests/ -v
 
 ---
 
-**最后更新:** 2025-01-16  
-**文档数量:** 8个  
+**最后更新:** 2025-10-12  
+**文档数量:** 11个  
 **维护状态:** ✅ 活跃
