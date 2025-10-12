@@ -870,36 +870,36 @@ def main():
     
     parser.add_argument(
         '--message',
-        default='hello',
-        help='用于测试语言模型的消息 (默认: hello)'
+        default=DEFAULT_TEST_MESSAGE,
+        help=f'用于测试语言模型的消息 (默认: {DEFAULT_TEST_MESSAGE})'
     )
     
     parser.add_argument(
         '--timeout',
         type=int,
-        default=30,
-        help='请求超时时间(秒) (默认: 30)'
+        default=DEFAULT_TIMEOUT,
+        help=f'请求超时时间(秒) (默认: {DEFAULT_TIMEOUT})'
     )
     
     parser.add_argument(
         '--request-delay',
         type=float,
-        default=10.0,
-        help='请求之间的延迟(秒)，避免速率限制 (默认: 10.0)'
+        default=DEFAULT_REQUEST_DELAY,
+        help=f'请求之间的延迟(秒)，避免速率限制 (默认: {DEFAULT_REQUEST_DELAY})'
     )
     
     parser.add_argument(
         '--max-retries',
         type=int,
-        default=3,
-        help='遇到429错误时的最大重试次数 (默认: 3)'
+        default=DEFAULT_MAX_RETRIES,
+        help=f'遇到429错误时的最大重试次数 (默认: {DEFAULT_MAX_RETRIES})'
     )
     
     parser.add_argument(
         '--output',
         '-o',
-        default='test_results.txt',
-        help='测试结果输出文件路径 (默认: test_results.txt)'
+        default=DEFAULT_OUTPUT_FILE,
+        help=f'测试结果输出文件路径 (默认: {DEFAULT_OUTPUT_FILE})'
     )
     
     parser.add_argument(

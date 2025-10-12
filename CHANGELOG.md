@@ -9,6 +9,28 @@
 
 ## [2.3.1-优化版] - 2025-01-17
 
+### 🐛 重要修复
+
+#### 修复默认请求延迟时间过长问题
+- **问题**：命令行参数 `--request-delay` 默认值硬编码为 10.0 秒，与 `constants.py` 中的 1.0 秒不一致
+- **影响**：导致测试速度慢10倍（100个模型需要16.7分钟而不是1.7分钟）
+- **修复**：统一使用 `DEFAULT_REQUEST_DELAY` 常量（1.0秒）
+- **改进**：所有命令行参数默认值现在使用常量，确保配置一致性
+- **结果**：测试速度提升10倍，默认每个请求间隔1秒 🚀
+
+修复的参数：
+- `--request-delay`: 10.0 → 1.0 秒（使用 `DEFAULT_REQUEST_DELAY`）
+- `--timeout`: 30 → `DEFAULT_TIMEOUT` (30)
+- `--message`: 'hello' → `DEFAULT_TEST_MESSAGE`
+- `--max-retries`: 3 → `DEFAULT_MAX_RETRIES` (3)
+- `--output`: 'test_results.txt' → `DEFAULT_OUTPUT_FILE`
+
+配置文件更新：
+- 在 `config_template.yaml` 和 `example_config.yaml` 中添加 `performance.request_delay: 1.0`
+- 在 `llmct/utils/config.py` 的 `DEFAULT_CONFIG` 中添加 `request_delay` 选项
+
+详见：`REQUEST_DELAY_FIX.md`
+
 ### ✨ 重大改进
 
 #### 代码质量提升

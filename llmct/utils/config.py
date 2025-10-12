@@ -30,7 +30,8 @@ class Config:
             'concurrent': 10,
             'rate_limit_rpm': 60,
             'retry_times': 3,
-            'retry_delay': 5
+            'retry_delay': 5,
+            'request_delay': 1.0
         },
         'logging': {
             'level': 'INFO',
@@ -171,6 +172,7 @@ performance:
   rate_limit_rpm: 60  # 速率限制（每分钟请求数）
   retry_times: 3  # 重试次数
   retry_delay: 5  # 重试延迟（秒）
+  request_delay: 1.0  # 请求之间的延迟（秒），避免速率限制
 
 # 日志配置
 logging:
