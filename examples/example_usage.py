@@ -27,7 +27,7 @@ def example_1_config_usage():
     from llmct.utils.config import Config
     
     # 创建配置模板
-    Config.create_template('example_config.yaml')
+    Config.create_template('config_template.yaml')
     
     # 加载配置
     config = Config()

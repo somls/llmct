@@ -91,30 +91,12 @@ def test_model(model_id):
 
 ---
 
-### 4. 异步并发测试 ⚡
+### 4. 测试执行模式
 
-**功能**：
-- 并发测试多个模型
-- 可配置并发数
-- **性能提升60-80%**
-
-**使用方法**：
-```python
-from llmct.core.async_tester import test_models_async
-
-results = test_models_async(
-    api_key="your-key",
-    base_url="https://api.openai.com",
-    models=models_list,
-    model_types=model_types_dict,
-    max_concurrent=10
-)
-```
-
-**性能对比**：
-- 传统串行：25分钟测试1132个模型
-- 并发测试：5-8分钟测试1132个模型
-- **提升70%+**
+**精简版说明**：
+- 当前精简版默认采用串行请求流程，聚焦稳定性和易用性
+- `--request-delay` 与 `--max-retries` 参数可细粒度控制速率与重试策略
+- 原 v2.0 中的 `test_models_async` 并发测试模块已下线，如需大规模并发可在自定义脚本中调用同样的`ModelTester`逻辑并结合 `asyncio` 或队列自行扩展
 
 ---
 
@@ -300,37 +282,18 @@ python mct.py --api-key YOUR_KEY --base-url https://api.openai.com
 
 ## 💡 使用示例
 
-### 示例1：并发测试with配置文件
+### 示例1：使用配置文件运行批量测试
 
-```python
-from llmct.utils.config import Config
-from llmct.core.async_tester import test_models_async
-from llmct.core.classifier import ModelClassifier
-from llmct.core.reporter import Reporter
+```bash
+# 生成并编辑配置文件
+python -c "from llmct.utils.config import Config; Config.create_template('config.yaml')"
 
-# 加载配置
-config = Config('config.yaml')
+# 填写好 API 配置后直接运行
+python mct.py  # 自动加载 config.yaml
 
-# 获取模型列表（假设已有）
-models = [...]  # 你的模型列表
-
-# 分类模型
-classifier = ModelClassifier()
-model_types = classifier.classify_batch([m['id'] for m in models])
-
-# 并发测试
-results = test_models_async(
-    api_key=config.get('api.key'),
-    base_url=config.get('api.base_url'),
-    models=models,
-    model_types=model_types,
-    max_concurrent=config.get('performance.concurrent', 10)
-)
-
-# 保存多种格式
-reporter = Reporter(config.get('api.base_url'))
-reporter.save_json(results, 'results.json')
-reporter.save_html(results, 'results.html')
+# 输出结果示例
+cat test_results.txt
+cat test_results_analysis.json | jq '.health_score'
 ```
 
 ### 示例2：结果分析和监控
@@ -446,10 +409,10 @@ performance:
 
 ## 📚 更多资源
 
-- [优化实施指南](OPTIMIZATION_GUIDE.md)
-- [配置文件模板](config_template.yaml)
-- [单元测试示例](tests/)
-- [原版功能文档](README.md)
+- [使用指南](USAGE.md)
+- [错误信息说明](ERRORS.md)
+- [配置文件模板](../config_template.yaml)
+- [项目概览](../README.md)
 
 ---
 

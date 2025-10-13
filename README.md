@@ -1,6 +1,6 @@
-# LLMCT - 大模型连通性测试工具（精简版）
+# LLMCT - 大模型连通性测试工具
 
-> 🚀 简洁、高效的大语言模型API测试工具
+> 🚀 大模型API测试工具
 
 [![Python](https://img.shields.io/badge/Python-3.7%2B-blue)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
@@ -16,8 +16,6 @@
 - 📈 **自动分析报告** - 测试完成后自动生成API健康度评分和告警
 - 📝 **统一日志** - 完整的日志记录系统
 - ⚡ **实时测试** - 专注实时测试，简洁高效
-
----
 
 ## 🚀 快速开始
 
@@ -84,19 +82,10 @@ python mct.py  # 自动加载 config.yaml
 ## 📖 文档
 
 ### 快速链接
-- 📘 [完整使用指南](docs/USAGE.md) - 详细教程和最佳实践
-- 🧪 [实测分析报告](FINAL_TEST_ANALYSIS.md) - 真实API测试结果与建议
-- 📝 [变更日志](CHANGELOG.md) - 版本历史
-- 🎯 [项目精简说明](PROJECT_SIMPLIFICATION.md) - v2.3.0精简详情
-
-### 重构文档 (v2.2.0+)
-- 📖 [重构指南](REFACTORING_GUIDE.md) - 详细的重构步骤
-- ✅ [重构完成报告](REFACTORING_COMPLETE.md) - Phase 1成果
-- 🎯 [Phase 2报告](REFACTORING_PHASE2.md) - Phase 2成果
-- 📊 [优化总结](OPTIMIZATION_SUMMARY.md) - 执行摘要
-
-### 文档索引
-- [完整文档列表](DOCS_INDEX.md)
+- 📘 [使用指南](docs/USAGE.md) - 详细教程、示例与最佳实践
+- 🚨 [错误信息说明](docs/ERRORS.md) - 常见错误成因与排查建议
+- 🔁 [升级指南](docs/UPGRADE.md) - 版本特性与迁移步骤
+- 📝 [变更日志](CHANGELOG.md) - 历史更新记录
 
 ---
 
