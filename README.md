@@ -84,8 +84,6 @@ python mct.py  # 自动加载 config.yaml
 ### 快速链接
 - 📘 [使用指南](docs/USAGE.md) - 详细教程、示例与最佳实践
 - 🚨 [错误信息说明](docs/ERRORS.md) - 常见错误成因与排查建议
-- 🔁 [升级指南](docs/UPGRADE.md) - 版本特性与迁移步骤
-- 📝 [变更日志](CHANGELOG.md) - 历史更新记录
 
 ---
 
