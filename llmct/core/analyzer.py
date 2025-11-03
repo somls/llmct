@@ -1,9 +1,11 @@
 """测试结果分析器"""
 
 import json
+import os
 from typing import Dict, List, Tuple
 from datetime import datetime
 from pathlib import Path
+from collections import defaultdict
 
 
 class ResultAnalyzer:
@@ -11,6 +13,157 @@ class ResultAnalyzer:
     
     def __init__(self):
         pass
+    
+    def analyze_by_base_url(self, base_url_dir: str) -> Dict:
+        """
+        分析指定base_url目录下的所有测试结果
+        统计每个模型在多次测试中的成功率
+        
+        Args:
+            base_url_dir: base_url对应的结果目录路径 (例如: test_results/api.openai.com)
+            
+        Returns:
+            分析结果字典，包含每个模型的统计信息
+        """
+        base_path = Path(base_url_dir)
+        if not base_path.exists():
+            return {'error': f'目录不存在: {base_url_dir}'}
+        
+        # 收集所有JSON测试结果文件
+        json_files = sorted(base_path.glob('test_*.json'))
+        if not json_files:
+            return {'error': f'未找到测试结果文件: {base_url_dir}'}
+        
+        # 按模型统计多次测试的结果
+        model_stats = defaultdict(lambda: {
+            'total_tests': 0,
+            'success_tests': 0,
+            'failed_tests': 0,
+            'success_rate': 0.0,
+            'avg_response_time': 0.0,
+            'response_times': [],
+            'error_codes': defaultdict(int),
+            'test_history': []
+        })
+        
+        # 遍历所有测试文件
+        for json_file in json_files:
+            try:
+                with open(json_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    test_time = data.get('metadata', {}).get('test_start_time', 'unknown')
+                    results = data.get('results', [])
+                    
+                    # 统计每个模型的结果
+                    for result in results:
+                        model_name = result['model']
+                        model_stats[model_name]['total_tests'] += 1
+                        
+                        if result['success']:
+                            model_stats[model_name]['success_tests'] += 1
+                            if result['response_time'] > 0:
+                                model_stats[model_name]['response_times'].append(result['response_time'])
+                        else:
+                            model_stats[model_name]['failed_tests'] += 1
+                            if result['error_code']:
+                                model_stats[model_name]['error_codes'][result['error_code']] += 1
+                        
+                        # 记录测试历史
+                        model_stats[model_name]['test_history'].append({
+                            'test_time': test_time,
+                            'success': result['success'],
+                            'response_time': result.get('response_time', 0),
+                            'error_code': result.get('error_code', '')
+                        })
+            except Exception as e:
+                print(f"处理文件失败 {json_file}: {e}")
+                continue
+        
+        # 计算每个模型的统计指标
+        for model_name, stats in model_stats.items():
+            stats['success_rate'] = (stats['success_tests'] / stats['total_tests'] * 100) if stats['total_tests'] > 0 else 0
+            if stats['response_times']:
+                stats['avg_response_time'] = sum(stats['response_times']) / len(stats['response_times'])
+            
+            # 转换 defaultdict 为普通 dict
+            stats['error_codes'] = dict(stats['error_codes'])
+        
+        # 生成总体统计
+        total_tests = len(json_files)
+        all_models = list(model_stats.keys())
+        
+        summary = {
+            'base_url_dir': str(base_url_dir),
+            'total_test_files': total_tests,
+            'total_models': len(all_models),
+            'analysis_time': datetime.now().isoformat()
+        }
+        
+        return {
+            'summary': summary,
+            'model_statistics': dict(model_stats)
+        }
+    
+    def get_model_success_rates(self, base_url_dir: str, min_tests: int = 2) -> List[Dict]:
+        """
+        获取指定base_url下所有模型的成功率排名
+        
+        Args:
+            base_url_dir: base_url对应的结果目录路径
+            min_tests: 最小测试次数（只统计测试次数>=此值的模型）
+            
+        Returns:
+            按成功率排序的模型列表
+        """
+        analysis = self.analyze_by_base_url(base_url_dir)
+        if 'error' in analysis:
+            return []
+        
+        model_stats = analysis['model_statistics']
+        
+        # 筛选并排序
+        ranked_models = []
+        for model_name, stats in model_stats.items():
+            if stats['total_tests'] >= min_tests:
+                ranked_models.append({
+                    'model': model_name,
+                    'total_tests': stats['total_tests'],
+                    'success_tests': stats['success_tests'],
+                    'failed_tests': stats['failed_tests'],
+                    'success_rate': stats['success_rate'],
+                    'avg_response_time': stats['avg_response_time']
+                })
+        
+        # 按成功率降序排序
+        ranked_models.sort(key=lambda x: (-x['success_rate'], x['avg_response_time']))
+        
+        return ranked_models
+    
+    def save_base_url_analysis(self, base_url_dir: str, output_file: str = None):
+        """
+        保存base_url的分析报告
+        
+        Args:
+            base_url_dir: base_url对应的结果目录路径
+            output_file: 输出文件路径（可选，默认保存在base_url_dir下）
+        """
+        analysis = self.analyze_by_base_url(base_url_dir)
+        if 'error' in analysis:
+            print(f"分析失败: {analysis['error']}")
+            return
+        
+        # 默认输出文件名
+        if output_file is None:
+            base_path = Path(base_url_dir)
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            output_file = base_path / f'analysis_{timestamp}.json'
+        
+        # 保存分析结果
+        with open(output_file, 'w', encoding='utf-8') as f:
+            json.dump(analysis, f, ensure_ascii=False, indent=2)
+        
+        print(f"分析报告已保存: {output_file}")
+        return str(output_file)
     
     def compare_results(self, file1: str, file2: str) -> Dict:
         """

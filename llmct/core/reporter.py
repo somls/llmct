@@ -2,6 +2,7 @@
 
 import json
 import csv
+import os
 from datetime import datetime
 from typing import List, Dict
 from pathlib import Path
@@ -14,9 +15,23 @@ class Reporter:
         self.base_url = base_url
         self.test_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     
+    def _get_base_url_safe_name(self) -> str:
+        """
+        获取base_url的安全文件名
+        将URL转换为合法的文件名（移除特殊字符）
+        """
+        import re
+        # 移除协议前缀
+        safe_name = self.base_url.replace('https://', '').replace('http://', '')
+        # 移除或替换特殊字符
+        safe_name = re.sub(r'[^\w\-\.]', '_', safe_name)
+        # 移除结尾的下划线
+        safe_name = safe_name.strip('_')
+        return safe_name
+    
     def save_report(self, results: List[Dict], output_file: str, format: str = 'txt'):
         """
-        保存测试报告
+        保存测试报告（按base_url分类保存）
         
         Args:
             results: 测试结果列表
@@ -25,14 +40,30 @@ class Reporter:
         """
         format = format.lower()
         
+        # 创建按base_url分类的目录结构
+        base_url_name = self._get_base_url_safe_name()
+        output_path = Path(output_file)
+        
+        # 创建 test_results/{base_url}/ 目录
+        results_dir = Path('test_results') / base_url_name
+        results_dir.mkdir(parents=True, exist_ok=True)
+        
+        # 生成带时间戳的文件名
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        file_ext = output_path.suffix or f'.{format}'
+        new_filename = f"test_{timestamp}{file_ext}"
+        new_output_file = results_dir / new_filename
+        
         if format == 'json':
-            self.save_json(results, output_file)
+            self.save_json(results, str(new_output_file))
         elif format == 'csv':
-            self.save_csv(results, output_file)
+            self.save_csv(results, str(new_output_file))
         elif format == 'html':
-            self.save_html(results, output_file)
+            self.save_html(results, str(new_output_file))
         else:  # 默认txt
-            self.save_txt(results, output_file)
+            self.save_txt(results, str(new_output_file))
+        
+        return str(new_output_file)
     
     def save_txt(self, results: List[Dict], output_file: str):
         """保存为TXT格式（表格格式）"""

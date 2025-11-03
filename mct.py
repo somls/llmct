@@ -596,7 +596,7 @@ class ModelTester:
         return row
     
     def save_results(self, results: List[Dict], output_file: str, test_start_time: str):
-        """保存测试结果到文件（使用Reporter）"""
+        """保存测试结果到文件（使用Reporter，按base_url分类保存）"""
         try:
             # 确定输出格式
             if output_file.endswith('.json'):
@@ -623,15 +623,18 @@ class ModelTester:
                 'success_rate': success_rate
             }
             
-            # 使用Reporter生成报告
+            # 使用Reporter生成报告（自动按base_url分类保存）
             reporter = Reporter(self.base_url)
-            reporter.save_report(results, output_file, format=format_type)
+            actual_output_file = reporter.save_report(results, output_file, format=format_type)
             
-            logger.info(f"测试结果已保存到: {output_file} (格式: {format_type})")
-            print(f"[信息] 测试结果已保存到: {output_file}")
+            logger.info(f"测试结果已保存到: {actual_output_file} (格式: {format_type})")
+            print(f"[信息] 测试结果已保存到: {actual_output_file}")
+            
+            return actual_output_file
         except Exception as e:
             logger.warning(f"保存结果失败: {e}")
             print(f"[警告] 保存结果失败: {e}")
+            return None
     
     def generate_analysis_report(self, results: List[Dict], output_file: str = None):
         """
@@ -827,11 +830,20 @@ class ModelTester:
         self.print_error_statistics(len(models), success_count)
         
         # 保存结果到文件
+        actual_output_file = None
         if output_file:
-            self.save_results(results, output_file, test_start_time)
+            actual_output_file = self.save_results(results, output_file, test_start_time)
         
         # 自动生成分析报告
-        self.generate_analysis_report(results, output_file)
+        self.generate_analysis_report(results, actual_output_file)
+        
+        # 打印按base_url的统计提示
+        if actual_output_file:
+            from pathlib import Path
+            base_url_dir = Path(actual_output_file).parent
+            print(f"\n[提示] 查看该base_url的历史统计，请运行:")
+            print(f"  python mct.py --analyze {base_url_dir}")
+            print()
 
 
 def main():
@@ -853,18 +865,27 @@ def main():
   
   # 跳过特定类型的模型测试
   python mct.py --api-key sk-xxx --base-url https://api.openai.com --skip-vision --skip-audio
+  
+  # 查看某个base_url的历史统计
+  python mct.py --analyze test_results/api.openai.com
         """
     )
     
     parser.add_argument(
+        '--analyze',
+        metavar='DIR',
+        help='分析指定base_url目录的历史测试结果（例如: test_results/api.openai.com）'
+    )
+    
+    parser.add_argument(
         '--api-key',
-        required=True,
+        required=False,
         help='API密钥'
     )
     
     parser.add_argument(
         '--base-url',
-        required=True,
+        required=False,
         help='API基础URL (例如: https://api.openai.com)'
     )
     
@@ -927,6 +948,53 @@ def main():
     )
     
     args = parser.parse_args()
+    
+    # 如果是分析模式
+    if args.analyze:
+        try:
+            from llmct.core.analyzer import ResultAnalyzer
+            from llmct.utils import pad_string
+            
+            analyzer = ResultAnalyzer()
+            
+            print(f"\n{'='*110}")
+            print(f"分析 {args.analyze} 目录下的历史测试结果")
+            print(f"{'='*110}\n")
+            
+            # 获取模型成功率排名
+            ranked_models = analyzer.get_model_success_rates(args.analyze, min_tests=1)
+            
+            if not ranked_models:
+                print(f"[错误] 未找到测试结果或分析失败")
+                sys.exit(1)
+            
+            # 打印统计表格
+            print(f"{'模型名称':<50} | {'测试次数':<10} | {'成功次数':<10} | {'失败次数':<10} | {'成功率':<10} | {'平均响应时间':<12}")
+            print("-" * 110)
+            
+            for model in ranked_models:
+                model_name = model['model'][:47] + '...' if len(model['model']) > 50 else model['model']
+                print(f"{model_name:<50} | {model['total_tests']:<10} | {model['success_tests']:<10} | "
+                      f"{model['failed_tests']:<10} | {model['success_rate']:>6.1f}%    | {model['avg_response_time']:>8.2f}秒")
+            
+            print(f"\n{'='*110}")
+            print(f"总计: {len(ranked_models)} 个模型")
+            print(f"{'='*110}\n")
+            
+            # 保存详细分析报告
+            analyzer.save_base_url_analysis(args.analyze)
+            
+        except Exception as e:
+            print(f"\n[错误] 分析失败: {e}")
+            import traceback
+            traceback.print_exc()
+            sys.exit(1)
+        
+        sys.exit(0)
+    
+    # 正常测试模式，需要API密钥和base_url
+    if not args.api_key or not args.base_url:
+        parser.error("测试模式需要 --api-key 和 --base-url 参数")
     
     try:
         tester = ModelTester(

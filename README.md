@@ -14,6 +14,8 @@
 - 🎯 **智能分类** - 支持7种模型类型（语言/视觉/音频/嵌入/图像生成/重排/审核）
 - 📊 **多格式报告** - TXT、JSON、CSV、HTML输出
 - 📈 **自动分析报告** - 测试完成后自动生成API健康度评分和告警
+- 📂 **按 Base URL 分类保存** - 自动按 API 提供商分类保存测试结果 (v2.4.0+)
+- 📉 **多次测试成功率统计** - 统计同一模型多次测试的成功率和性能趋势 (v2.4.0+)
 - 📝 **统一日志** - 完整的日志记录系统
 - ⚡ **实时测试** - 专注实时测试，简洁高效
 
@@ -30,7 +32,7 @@ pip install -r requirements.txt
 ### 基础使用
 
 ```bash
-# 基础测试
+# 基础测试（结果自动保存到 test_results/{base_url}/）
 python mct.py --api-key sk-xxx --base-url https://api.openai.com
 
 # 保存结果到不同格式
@@ -43,6 +45,9 @@ python mct.py --api-key sk-xxx --base-url https://api.openai.com --skip-vision -
 
 # 调整请求延迟以适应API速率限制
 python mct.py --api-key sk-xxx --base-url https://api.openai.com --request-delay 1.0
+
+# 查看某个 API 提供商的历史统计（v2.4.0+）
+python mct.py --analyze test_results/api.openai.com
 ```
 
 ### 配置文件
@@ -83,6 +88,7 @@ python mct.py  # 自动加载 config.yaml
 
 ### 快速链接
 - 📘 [使用指南](docs/USAGE.md) - 详细教程、示例与最佳实践
+- 📊 [Base URL 统计分析](docs/base_url_analysis.md) - 多次测试成功率统计与分析 (v2.4.0+)
 - 🚨 [错误信息说明](docs/ERRORS.md) - 常见错误成因与排查建议
 
 ---

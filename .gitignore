@@ -25,6 +25,10 @@ test_analysis.md
 *_RECOMMENDATIONS.md
 *_GUIDE.md
 *_PHASE*.md
+API_TEST_ANALYSIS.md
+OPTIMIZATION_SUMMARY.md
+TEST_REPORT_FINAL.md
+USAGE_GUIDE_*.md
 analyze_*.py
 check_*.py
 diagnose_*.py
@@ -34,12 +38,15 @@ one.txt
 api_*.json
 test_config.yaml
 
-# 临时配置文件
+# 临时配置文件（包含敏感信息）
 config_conservative.yaml
 config_one_*.yaml
 config_optimized*.yaml
 config_quick_test.yaml
 api_test_config.yaml
+config_hybgzs.yaml
+config_*.yaml
+!config_template.yaml
 
 # 保留重要文档（v2.3.0精简版）
 !FINAL_TEST_ANALYSIS.md
@@ -50,10 +57,14 @@ api_test_config.yaml
 *.db
 !schema.db
 
-# 临时调试文件
+# 临时调试和测试文件
 test_api_debug.py
 *_debug.py
 *_temp.py
+quick_api_test.py
+quick_test.py
+test_*.py
+!tests/test_*.py
 
 # Python缓存
 __pycache__/
