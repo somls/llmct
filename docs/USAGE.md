@@ -232,8 +232,116 @@ python mct.py \
 ### Q2: 如何提高测试速度？
 **A:** 
 1. 使用 `--skip-vision` 等参数跳过不需要的模型类型
-2. 减小 `--request-delay` 参数（需注意API速率限制）
+2. 减小 `--request-delay` 参数（默认3秒，需注意API速率限制）
 3. 增加 `--timeout` 可以减少等待时间
+
+### Q4: 如何批量测试多个API？
+**A:** 
+工具会自动检测配置。在 `config.yaml` 中配置 `apis` 列表即可：
+```yaml
+# 全局配置
+testing:
+  message: "hello"
+
+# 配置多个API，工具自动启用批量测试
+apis:
+  - name: OpenAI
+    key: ${OPENAI_API_KEY}
+    base_url: https://api.openai.com
+    enabled: true
+  
+  - name: DeepSeek
+    key: ${DEEPSEEK_API_KEY}
+    base_url: https://api.deepseek.com
+    enabled: true
+```
+运行 `python mct.py`，工具会自动检测并批量测试所有启用的API。
+
+### Q5: 多API配置时如何为不同API设置不同参数？
+**A:** 
+每个API可以覆盖全局配置：
+```yaml
+# 全局配置
+testing:
+  message: "hello"
+  skip_vision: false
+
+# API特定配置会覆盖全局配置
+apis:
+  - name: OpenAI
+    key: ${OPENAI_API_KEY}
+    base_url: https://api.openai.com
+    timeout: 30
+    request_delay: 3.0
+    # 使用全局 testing 配置
+  
+  - name: LocalAPI
+    key: sk-local
+    base_url: http://localhost:8000
+    timeout: 60
+    request_delay: 1.0
+    testing:  # 覆盖全局配置
+      message: "你好"
+      skip_vision: true
+```
+
+### Q6: 多API配置时，测试结果会保存到哪里？
+**A:** 
+无论单API还是多API模式，测试结果都会**自动按base_url分类保存**：
+
+```
+test_results/
+├── api.openai.com/          ← OpenAI的所有测试结果
+│   ├── test_20250103_143022.txt
+│   └── test_20250103_150315.txt
+├── api.deepseek.com/        ← DeepSeek的所有测试结果
+│   └── test_20250103_144530.txt
+└── localhost/               ← 本地API的所有测试结果
+    └── test_20250103_151200.txt
+```
+
+### Q7: 如何并发测试多个API？（v2.5.0 新增）
+**A:**
+使用 `--api-concurrent` 参数控制多API并发数：
+
+```bash
+# 顺序测试（默认）- 一个API完成后再测试下一个
+python mct.py
+
+# 并发测试 - 同时测试3个API
+python mct.py --api-concurrent 3
+```
+
+**并发模式显示格式：**
+```
+==================================================
+多API并发测试模式
+==================================================
+并发API数: 3
+==================================================
+
+API名称      | 模型名称                            | 响应时间  | 错误信息   | 响应内容
+--------------------------------------------------
+OpenAI      | gpt-4                              | 1.23秒   | -         | Hello!...
+Anthropic   | claude-3-opus                       | 1.45秒   | -         | Hi!...
+DeepSeek    | deepseek-chat                      | 2.10秒   | -         | 你好！...
+```
+
+**双层并发说明：**
+- **第1层并发**（`concurrent`）：每个API内部并发测试多个模型
+- **第2层并发**（`--api-concurrent`）：同时并发测试多个API
+- **组合效果**：3个API × 每个10并发 = 最多30个并发请求
+
+**性能对比：**
+- 顺序测试3个API（每个50模型）：~230秒
+- 并发测试3个API（--api-concurrent 3）：~80秒
+- **节省时间：65%**
+
+**说明：**
+- 全局 `output.file` 配置仅作为**文件名模板**
+- 实际保存路径由每个API的 `base_url` 自动决定
+- 不同API的测试结果自动隔离，互不干扰
+- 每次测试会生成带时间戳的新文件，不会覆盖历史记录
 
 ### Q3: 如何理解健康度评分？
 **A:** 
@@ -390,7 +498,7 @@ EOF
 
 ## 总结
 
-精简版LLMCT提供：
+LLMCT提供：
 - ✅ 实时测试，无缓存干扰
 - ✅ 自动健康度评分（0-100分）
 - ✅ 智能告警系统

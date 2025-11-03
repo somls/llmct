@@ -2,8 +2,9 @@
 
 import os
 import yaml
+import re
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 
 class Config:
@@ -31,7 +32,7 @@ class Config:
             'rate_limit_rpm': 60,
             'retry_times': 3,
             'retry_delay': 5,
-            'request_delay': 1.0
+            'request_delay': 3.0
         },
         'logging': {
             'level': 'INFO',
@@ -64,11 +65,22 @@ class Config:
         """从YAML文件加载配置"""
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
-                user_config = yaml.safe_load(f)
+                content = f.read()
+                # 替换环境变量
+                content = self._expand_env_vars(content)
+                user_config = yaml.safe_load(content)
                 if user_config:
                     self._deep_update(self.config, user_config)
         except Exception as e:
             print(f"[警告] 加载配置文件失败: {e}")
+    
+    def _expand_env_vars(self, content: str) -> str:
+        """展开环境变量 ${VAR_NAME}"""
+        def replace_env_var(match):
+            var_name = match.group(1)
+            return os.environ.get(var_name, match.group(0))
+        
+        return re.sub(r'\$\{([A-Za-z_][A-Za-z0-9_]*)\}', replace_env_var, content)
     
     def _load_from_env(self):
         """从环境变量加载配置"""
@@ -142,10 +154,65 @@ class Config:
         """导出为字典"""
         return self._deep_copy(self.config)
     
+    def get_apis(self) -> List[Dict]:
+        """
+        获取API配置列表
+        
+        Returns:
+            API配置列表。如果配置了 apis 列表，返回启用的API；
+            否则返回包含单个API配置的列表
+        """
+        # 检查是否配置了多API
+        if 'apis' in self.config and self.config['apis']:
+            # 返回所有启用的API
+            enabled_apis = []
+            for api_config in self.config['apis']:
+                if api_config.get('enabled', True):  # 默认启用
+                    # 合并全局配置和API特定配置
+                    merged = self._merge_api_config(api_config)
+                    enabled_apis.append(merged)
+            return enabled_apis
+        else:
+            # 返回单API配置
+            return [{
+                'name': 'Default',
+                'key': self.config['api']['key'],
+                'base_url': self.config['api']['base_url'],
+                'timeout': self.config['api']['timeout'],
+                'request_delay': self.config['performance']['request_delay'],
+                'testing': self.config['testing'],
+                'output': self.config['output'],
+                'performance': self.config['performance'],
+                'logging': self.config['logging']
+            }]
+    
+    def _merge_api_config(self, api_config: Dict) -> Dict:
+        """合并全局配置和API特定配置"""
+        merged = {
+            'name': api_config.get('name', 'Unknown'),
+            'key': api_config.get('key', ''),
+            'base_url': api_config.get('base_url', ''),
+            'timeout': api_config.get('timeout', self.config['api']['timeout']),
+            'request_delay': api_config.get('request_delay', self.config['performance']['request_delay']),
+        }
+        
+        # 合并测试配置
+        if 'testing' in api_config:
+            merged['testing'] = {**self.config['testing'], **api_config['testing']}
+        else:
+            merged['testing'] = self.config['testing'].copy()
+        
+        # 使用全局输出和性能配置
+        merged['output'] = self.config['output'].copy()
+        merged['performance'] = self.config['performance'].copy()
+        merged['logging'] = self.config['logging'].copy()
+        
+        return merged
+    
     @staticmethod
-    def create_template(file_path='config_template.yaml'):
+    def create_template(file_path='config_example.yaml'):
         """创建配置模板文件"""
-        template = """# 大模型连通性测试工具 - 配置文件（精简版）
+        template = """# 大模型连通性测试工具 - 配置文件示例
 
 # API配置
 api:
@@ -172,7 +239,7 @@ performance:
   rate_limit_rpm: 60  # 速率限制（每分钟请求数）
   retry_times: 3  # 重试次数
   retry_delay: 5  # 重试延迟（秒）
-  request_delay: 1.0  # 请求之间的延迟（秒），避免速率限制
+  request_delay: 3.0  # 请求之间的延迟（秒），避免速率限制
 
 # 日志配置
 logging:

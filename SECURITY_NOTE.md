@@ -10,7 +10,7 @@
 
 1. **包含真实 API 密钥的配置文件**:
    - `config.yaml`
-   - `config_*.yaml` (除了 `config_template.yaml`)
+   - `config_*.yaml` (除了 `config_example.yaml`)
    - `.env` 文件
 
 2. **临时测试文件**:
@@ -34,7 +34,7 @@
 **步骤**:
 ```bash
 # 复制模板
-cp config_template.yaml config.yaml
+cp config_example.yaml config.yaml
 
 # 编辑配置，填入你的 API 密钥
 nano config.yaml
@@ -161,7 +161,7 @@ git push --force
    ```
 
 2. **使用配置模板**
-   - 提供 `config_template.yaml` 示例
+   - 提供 `config_example.yaml` 示例
    - 真实配置使用 `config.yaml` (在 .gitignore 中)
 
 3. **文档中使用占位符**

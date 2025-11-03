@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-大模型连通性和可用性测试工具 - 精简版
+大模型连通性和可用性测试工具
 测试语言模型的响应能力和非语言模型的连通性
 移除缓存功能，专注于实时测试和自动分析
 """
@@ -22,9 +22,10 @@ from llmct.utils.logger import get_logger
 from llmct.utils import display_width, pad_string, truncate_string
 from llmct.constants import (
     COL_WIDTH_MODEL, COL_WIDTH_TIME, COL_WIDTH_ERROR, COL_WIDTH_CONTENT,
-    TABLE_WIDTH, SEPARATOR_WIDTH,
+    COL_WIDTH_API_NAME, TABLE_WIDTH, TABLE_WIDTH_MULTI_API,
+    SEPARATOR_WIDTH, SEPARATOR_WIDTH_MULTI_API,
     DEFAULT_TEST_MESSAGE, DEFAULT_TIMEOUT, DEFAULT_REQUEST_DELAY,
-    DEFAULT_MAX_RETRIES, DEFAULT_OUTPUT_FILE,
+    DEFAULT_MAX_RETRIES, DEFAULT_OUTPUT_FILE, DEFAULT_API_CONCURRENT,
     DEFAULT_TEST_IMAGE_URL, DEFAULT_VISION_MESSAGE,
     DEFAULT_IMAGE_GEN_PROMPT, DEFAULT_EMBEDDING_TEXT,
     API_ENDPOINT_MODELS, API_ENDPOINT_CHAT, API_ENDPOINT_EMBEDDINGS,
@@ -50,9 +51,11 @@ if sys.platform == 'win32':
 
 class ModelTester:
     def __init__(self, api_key: str, base_url: str, timeout: int = 30, 
-                 request_delay: float = 1.0, max_retries: int = 3):
+                 request_delay: float = 1.0, max_retries: int = 3,
+                 concurrent: int = 1, rate_limit_rpm: int = 60, api_name: str = None):
         self.api_key = api_key
         self.base_url = base_url.rstrip('/')
+        self.api_name = api_name or base_url  # API名称用于显示
         self.timeout = timeout
         
         # 请求头
@@ -72,6 +75,16 @@ class ModelTester:
         self.error_stats = {}  # 错误统计
         self.request_delay = request_delay  # 降低默认延迟到1秒
         self.max_retries = max_retries      # 429错误最大重试次数
+        
+        # 并发和速率限制配置
+        self.concurrent = max(1, concurrent)  # 并发数，至少为1
+        self.rate_limit_rpm = max(1, rate_limit_rpm)  # 每分钟请求数，至少为1
+        self.min_interval = 60.0 / self.rate_limit_rpm  # 最小请求间隔（秒）
+        self.last_request_time = 0  # 上次请求时间
+        
+        # 线程安全锁（用于速率限制）
+        import threading
+        self.rate_lock = threading.Lock()
     
     def __enter__(self):
         """上下文管理器入口"""
@@ -140,9 +153,21 @@ class ModelTester:
         
         return error_code, error_msg
     
+    def _wait_for_rate_limit(self):
+        """根据速率限制等待适当的时间"""
+        with self.rate_lock:
+            current_time = time.time()
+            time_since_last = current_time - self.last_request_time
+            
+            if time_since_last < self.min_interval:
+                sleep_time = self.min_interval - time_since_last
+                time.sleep(sleep_time)
+            
+            self.last_request_time = time.time()
+    
     def _make_request_with_retry(self, method: str, url: str, **kwargs) -> requests.Response:
         """
-        发送HTTP请求，自动处理429错误重试（指数退避）
+        发送HTTP请求，自动处理429错误重试（指数退避）并应用速率限制
         
         Args:
             method: HTTP方法 ('GET', 'POST', 等)
@@ -159,6 +184,9 @@ class ModelTester:
         
         for attempt in range(self.max_retries + 1):
             try:
+                # 应用速率限制
+                self._wait_for_rate_limit()
+                
                 # 从 kwargs 中获取 timeout，如果没有则使用默认值
                 timeout = kwargs.pop('timeout', self.timeout)
                 
@@ -502,6 +530,138 @@ class ModelTester:
             logger.error(f"测试时发生未知错误: {type(e).__name__}: {e}")
             return False, 0, 'UNKNOWN_ERROR', str(e)[:200]
     
+    def _test_single_model(self, model: Dict, test_message: str, test_vision: bool,
+                          test_audio: bool, test_embedding: bool, test_image_gen: bool) -> Dict:
+        """测试单个模型（可被并发调用）"""
+        model_id = model.get('id', model.get('model', 'unknown'))
+        model_type = self.classify_model(model_id)
+        
+        # 根据模型类型选择测试方法
+        if model_type == 'language':
+            success, response_time, error_code, content = self.test_language_model(model_id, test_message)
+        elif model_type == 'vision' and test_vision:
+            success, response_time, error_code, content = self.test_vision_model(model_id)
+        elif model_type == 'audio' and test_audio:
+            success, response_time, error_code, content = self.test_audio_model(model_id)
+        elif model_type == 'embedding' and test_embedding:
+            success, response_time, error_code, content = self.test_embedding_model(model_id)
+        elif model_type == 'image_generation' and test_image_gen:
+            success, response_time, error_code, content = self.test_image_generation_model(model_id)
+        else:
+            # 跳过或使用基础连通性测试
+            if model_type in ['vision', 'audio', 'embedding', 'image_generation']:
+                success, response_time, error_code, content = self.test_connectivity(model_id)
+                if success:
+                    content = f'[{model_type}模型] {content}'
+            else:
+                success, response_time, error_code, content = self.test_connectivity(model_id)
+        
+        # 更新错误统计
+        if not success:
+            self.update_error_stats(error_code)
+        
+        return {
+            'model': model_id,
+            'success': success,
+            'response_time': response_time,
+            'error_code': error_code,
+            'content': content
+        }
+    
+    def _test_models_sequential(self, models: List[Dict], test_message: str, test_vision: bool,
+                                test_audio: bool, test_embedding: bool, test_image_gen: bool,
+                                api_name: str = None) -> List[Dict]:
+        """顺序测试模型（原有逻辑）"""
+        results = []
+        
+        col_widths = {
+            'model': COL_WIDTH_MODEL,
+            'time': COL_WIDTH_TIME,
+            'error': COL_WIDTH_ERROR,
+            'content': COL_WIDTH_CONTENT
+        }
+        
+        # 如果是多API模式，添加API名称列
+        if api_name:
+            col_widths['api_name'] = COL_WIDTH_API_NAME
+        
+        for idx, model in enumerate(models, 1):
+            result = self._test_single_model(model, test_message, test_vision, 
+                                            test_audio, test_embedding, test_image_gen)
+            results.append(result)
+            
+            # 立即输出当前测试结果
+            row = self.format_row(result['model'], result['success'], result['response_time'],
+                                 result['error_code'], result['content'], col_widths, api_name)
+            print(row)
+            sys.stdout.flush()
+            
+            # 添加请求之间的延迟
+            if idx < len(models) and self.request_delay > 0:
+                time.sleep(self.request_delay)
+        
+        return results
+    
+    def _test_models_concurrent(self, models: List[Dict], test_message: str, test_vision: bool,
+                                test_audio: bool, test_embedding: bool, test_image_gen: bool,
+                                api_name: str = None) -> List[Dict]:
+        """并发测试模型"""
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        import threading
+        
+        results = []
+        results_lock = threading.Lock()
+        
+        col_widths = {
+            'model': COL_WIDTH_MODEL,
+            'time': COL_WIDTH_TIME,
+            'error': COL_WIDTH_ERROR,
+            'content': COL_WIDTH_CONTENT
+        }
+        
+        # 如果是多API模式，添加API名称列
+        if api_name:
+            col_widths['api_name'] = COL_WIDTH_API_NAME
+        
+        print(f"[信息] 使用并发测试模式（并发数: {self.concurrent}，速率限制: {self.rate_limit_rpm} RPM）\n")
+        sys.stdout.flush()
+        
+        with ThreadPoolExecutor(max_workers=self.concurrent) as executor:
+            # 提交所有测试任务
+            future_to_model = {
+                executor.submit(self._test_single_model, model, test_message, 
+                              test_vision, test_audio, test_embedding, test_image_gen): model
+                for model in models
+            }
+            
+            # 按完成顺序处理结果
+            for future in as_completed(future_to_model):
+                try:
+                    result = future.result()
+                    
+                    with results_lock:
+                        results.append(result)
+                        
+                        # 立即输出测试结果
+                        row = self.format_row(result['model'], result['success'], result['response_time'],
+                                             result['error_code'], result['content'], col_widths, api_name)
+                        print(row)
+                        sys.stdout.flush()
+                        
+                except Exception as e:
+                    model = future_to_model[future]
+                    model_id = model.get('id', model.get('model', 'unknown'))
+                    logger.error(f"测试模型 {model_id} 时发生异常: {e}")
+                    results.append({
+                        'model': model_id,
+                        'success': False,
+                        'response_time': 0,
+                        'error_code': 'EXCEPTION',
+                        'content': str(e)[:200]
+                    })
+        
+        return results
+    
     def categorize_error(self, error_code: str) -> str:
         """错误分类"""
         error_categories = {
@@ -560,7 +720,7 @@ class ModelTester:
 
     
     def format_row(self, model_name: str, success: bool, response_time: float, 
-                   error_code: str, content: str, col_widths: dict) -> str:
+                   error_code: str, content: str, col_widths: dict, api_name: str = None) -> str:
         """格式化输出行"""
         # 截断过长的字符串
         if display_width(model_name) > col_widths['model']:
@@ -587,12 +747,28 @@ class ModelTester:
             content_str = content_str + '...'
         
         # 使用自定义填充函数进行对齐
-        row = (
-            f"{pad_string(model_name, col_widths['model'], 'left')} | "
-            f"{pad_string(time_str, col_widths['time'], 'center')} | "
-            f"{pad_string(error_str, col_widths['error'], 'center')} | "
-            f"{pad_string(content_str, col_widths['content'], 'left')}"
-        )
+        if api_name:  # 多API模式
+            # 截断API名称
+            api_display = api_name
+            if display_width(api_display) > col_widths.get('api_name', COL_WIDTH_API_NAME):
+                while display_width(api_display) > col_widths.get('api_name', COL_WIDTH_API_NAME) - 2:
+                    api_display = api_display[:-1]
+                api_display = api_display + '..'
+            
+            row = (
+                f"{pad_string(api_display, col_widths.get('api_name', COL_WIDTH_API_NAME), 'left')} | "
+                f"{pad_string(model_name, col_widths['model'], 'left')} | "
+                f"{pad_string(time_str, col_widths['time'], 'center')} | "
+                f"{pad_string(error_str, col_widths['error'], 'center')} | "
+                f"{pad_string(content_str, col_widths['content'], 'left')}"
+            )
+        else:  # 单API模式
+            row = (
+                f"{pad_string(model_name, col_widths['model'], 'left')} | "
+                f"{pad_string(time_str, col_widths['time'], 'center')} | "
+                f"{pad_string(error_str, col_widths['error'], 'center')} | "
+                f"{pad_string(content_str, col_widths['content'], 'left')}"
+            )
         return row
     
     def save_results(self, results: List[Dict], output_file: str, test_start_time: str):
@@ -705,7 +881,8 @@ class ModelTester:
     
     def test_all_models(self, test_message: str = "hello", output_file: str = None, 
                         test_vision: bool = True, test_audio: bool = True, 
-                        test_embedding: bool = True, test_image_gen: bool = True):
+                        test_embedding: bool = True, test_image_gen: bool = True,
+                        show_api_name: bool = False):
         """
         测试所有模型
         
@@ -716,10 +893,11 @@ class ModelTester:
             test_audio: 是否测试音频模型（需要实际API调用）
             test_embedding: 是否测试Embedding模型（需要实际API调用）
             test_image_gen: 是否测试图像生成模型（需要实际API调用）
+            show_api_name: 是否在输出中显示API名称（多API并发模式）
         """
         test_start_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         print(f"\n{'='*SEPARATOR_WIDTH}")
-        print(f"大模型连通性和可用性测试 [精简版]")
+        print(f"大模型连通性和可用性测试")
         print(f"Base URL: {self.base_url}")
         print(f"测试时间: {test_start_time}")
         print(f"测试配置: 视觉={test_vision}, 音频={test_audio}, 嵌入={test_embedding}, 图像生成={test_image_gen}")
@@ -746,16 +924,30 @@ class ModelTester:
             'content': COL_WIDTH_CONTENT
         }
         
-        total_width = TABLE_WIDTH
+        # 如果需要显示API名称，调整列宽和表格宽度
+        if show_api_name:
+            col_widths['api_name'] = COL_WIDTH_API_NAME
+            total_width = TABLE_WIDTH_MULTI_API
+        else:
+            total_width = TABLE_WIDTH
         
         # 打印表头
         print(f"{'='*total_width}")
-        header = (
-            f"{pad_string('模型名称', col_widths['model'], 'left')} | "
-            f"{pad_string('响应时间', col_widths['time'], 'center')} | "
-            f"{pad_string('错误信息', col_widths['error'], 'center')} | "
-            f"{pad_string('响应内容', col_widths['content'], 'left')}"
-        )
+        if show_api_name:
+            header = (
+                f"{pad_string('API名称', col_widths['api_name'], 'left')} | "
+                f"{pad_string('模型名称', col_widths['model'], 'left')} | "
+                f"{pad_string('响应时间', col_widths['time'], 'center')} | "
+                f"{pad_string('错误信息', col_widths['error'], 'center')} | "
+                f"{pad_string('响应内容', col_widths['content'], 'left')}"
+            )
+        else:
+            header = (
+                f"{pad_string('模型名称', col_widths['model'], 'left')} | "
+                f"{pad_string('响应时间', col_widths['time'], 'center')} | "
+                f"{pad_string('错误信息', col_widths['error'], 'center')} | "
+                f"{pad_string('响应内容', col_widths['content'], 'left')}"
+            )
         print(header)
         print(f"{'-'*total_width}")
         sys.stdout.flush()
@@ -764,60 +956,22 @@ class ModelTester:
         fail_count = 0
         results = []
         
-        # 边测试边输出
-        for idx, model in enumerate(models, 1):
-            model_id = model.get('id', model.get('model', 'unknown'))
-            
-            # 分类模型并使用对应的测试方法
-            model_type = self.classify_model(model_id)
-            
-            if model_type == 'language':
-                success, response_time, error_code, content = self.test_language_model(model_id, test_message)
-            elif model_type == 'vision' and test_vision:
-                success, response_time, error_code, content = self.test_vision_model(model_id)
-            elif model_type == 'audio' and test_audio:
-                success, response_time, error_code, content = self.test_audio_model(model_id)
-            elif model_type == 'embedding' and test_embedding:
-                success, response_time, error_code, content = self.test_embedding_model(model_id)
-            elif model_type == 'image_generation' and test_image_gen:
-                success, response_time, error_code, content = self.test_image_generation_model(model_id)
-            else:
-                # 跳过或使用基础连通性测试
-                if model_type in ['vision', 'audio', 'embedding', 'image_generation']:
-                    # 如果禁用了该类型的测试，使用简单连通性测试
-                    success, response_time, error_code, content = self.test_connectivity(model_id)
-                    if success:
-                        content = f'[{model_type}模型] {content}'
-                else:
-                    # 其他类型使用基础连通性测试
-                    success, response_time, error_code, content = self.test_connectivity(model_id)
-            
-            # 更新错误统计
-            if not success:
-                self.update_error_stats(error_code)
-            
-            if success:
-                success_count += 1
-            else:
-                fail_count += 1
-            
-            # 保存结果到列表
-            results.append({
-                'model': model_id,
-                'success': success,
-                'response_time': response_time,
-                'error_code': error_code,
-                'content': content
-            })
-            
-            # 立即输出当前测试结果
-            row = self.format_row(model_id, success, response_time, error_code, content, col_widths)
-            print(row)
-            sys.stdout.flush()  # 强制刷新输出缓冲区，确保实时显示
-            
-            # 添加请求之间的延迟，避免触发速率限制
-            if idx < len(models) and self.request_delay > 0:
-                time.sleep(self.request_delay)
+        # 传递API名称（如果需要显示）
+        api_name_for_display = self.api_name if show_api_name else None
+        
+        # 根据并发数选择测试方式
+        if self.concurrent > 1:
+            # 并发测试
+            results = self._test_models_concurrent(models, test_message, test_vision, 
+                                                   test_audio, test_embedding, test_image_gen, api_name_for_display)
+        else:
+            # 顺序测试（原有逻辑）
+            results = self._test_models_sequential(models, test_message, test_vision,
+                                                   test_audio, test_embedding, test_image_gen, api_name_for_display)
+        
+        # 统计结果
+        success_count = sum(1 for r in results if r['success'])
+        fail_count = len(results) - success_count
         
         # 打印统计信息
         print(f"{'='*total_width}")
@@ -846,9 +1000,79 @@ class ModelTester:
             print()
 
 
+def test_single_api(api_config: Dict, show_api_name: bool = False, print_lock = None) -> Dict:
+    """
+    测试单个API（用于并发测试）
+    
+    Args:
+        api_config: API配置字典
+        show_api_name: 是否显示API名称
+        print_lock: 线程锁，用于保护打印输出
+        
+    Returns:
+        包含测试结果的字典
+    """
+    import threading
+    
+    api_name = api_config.get('name', 'Unknown')
+    api_key = api_config.get('key')
+    base_url = api_config.get('base_url')
+    
+    # 获取API特定的配置
+    timeout = api_config.get('timeout', DEFAULT_TIMEOUT)
+    request_delay = api_config.get('request_delay', DEFAULT_REQUEST_DELAY)
+    
+    # 性能配置
+    performance_config = api_config.get('performance', {})
+    max_retries = performance_config.get('retry_times', DEFAULT_MAX_RETRIES)
+    concurrent = performance_config.get('concurrent', 1)
+    rate_limit_rpm = performance_config.get('rate_limit_rpm', 60)
+    
+    # 测试配置
+    testing_config = api_config.get('testing', {})
+    message = testing_config.get('message', DEFAULT_TEST_MESSAGE)
+    skip_vision = testing_config.get('skip_vision', False)
+    skip_audio = testing_config.get('skip_audio', False)
+    skip_embedding = testing_config.get('skip_embedding', False)
+    skip_image_gen = testing_config.get('skip_image_gen', False)
+    
+    # 输出配置
+    output_config = api_config.get('output', {})
+    output_file = output_config.get('file', DEFAULT_OUTPUT_FILE)
+    
+    # 创建测试器
+    tester = ModelTester(
+        api_key=api_key,
+        base_url=base_url,
+        timeout=timeout,
+        request_delay=request_delay,
+        max_retries=max_retries,
+        concurrent=concurrent,
+        rate_limit_rpm=rate_limit_rpm,
+        api_name=api_name
+    )
+    
+    # 执行测试
+    tester.test_all_models(
+        test_message=message, 
+        output_file=output_file,
+        test_vision=not skip_vision,
+        test_audio=not skip_audio,
+        test_embedding=not skip_embedding,
+        test_image_gen=not skip_image_gen,
+        show_api_name=show_api_name
+    )
+    
+    return {
+        'api_name': api_name,
+        'base_url': base_url,
+        'status': 'completed'
+    }
+
+
 def main():
     parser = argparse.ArgumentParser(
-        description='大模型连通性和可用性测试工具 - 精简版',
+        description='大模型连通性和可用性测试工具',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 示例用法:
@@ -878,15 +1102,21 @@ def main():
     )
     
     parser.add_argument(
+        '--config',
+        default='config.yaml',
+        help='配置文件路径 (默认: config.yaml)'
+    )
+    
+    parser.add_argument(
         '--api-key',
         required=False,
-        help='API密钥'
+        help='API密钥 (覆盖配置文件)'
     )
     
     parser.add_argument(
         '--base-url',
         required=False,
-        help='API基础URL (例如: https://api.openai.com)'
+        help='API基础URL (覆盖配置文件，例如: https://api.openai.com)'
     )
     
     parser.add_argument(
@@ -947,6 +1177,13 @@ def main():
         help='跳过图像生成模型的实际测试（仅连通性测试）'
     )
     
+    parser.add_argument(
+        '--api-concurrent',
+        type=int,
+        default=DEFAULT_API_CONCURRENT,
+        help=f'多API并发测试数（默认: {DEFAULT_API_CONCURRENT}，1=顺序测试，>1=并发测试多个API）'
+    )
+    
     args = parser.parse_args()
     
     # 如果是分析模式
@@ -992,27 +1229,210 @@ def main():
         
         sys.exit(0)
     
-    # 正常测试模式，需要API密钥和base_url
-    if not args.api_key or not args.base_url:
-        parser.error("测试模式需要 --api-key 和 --base-url 参数")
+    # 正常测试模式
+    # 加载配置文件
+    from llmct.utils.config import Config
+    
+    # 如果指定了config文件且存在，则加载；否则尝试加载默认的config.yaml
+    if os.path.exists(args.config):
+        config = Config(args.config)
+        print(f"[信息] 已加载配置文件: {args.config}\n")
+    elif os.path.exists('config.yaml'):
+        config = Config('config.yaml')
+        print(f"[信息] 已加载配置文件: config.yaml\n")
+    else:
+        config = Config()
+    
+    # 从命令行参数覆盖配置（仅对单API模式生效）
+    config.override_from_args(args)
+    
+    # 获取API配置列表（支持多API批量测试）
+    apis = config.get_apis()
+    
+    if not apis:
+        parser.error("需要API密钥和Base URL。请通过以下方式之一提供:\n"
+                     "  1. 使用 --api-key 和 --base-url 参数\n"
+                     "  2. 在 config.yaml 文件中配置 api 部分\n"
+                     "  3. 在 config.yaml 文件中配置 apis 列表（支持多API批量测试）\n"
+                     "  4. 设置环境变量 LLMCT_API_KEY 和 LLMCT_BASE_URL")
+    
+    # 检查是否有有效的API配置
+    valid_apis = [api for api in apis if api.get('key') and api.get('base_url')]
+    if not valid_apis:
+        parser.error("未找到有效的API配置（需要同时配置 key 和 base_url）")
+    
+    # 如果配置了多个API，显示批量测试信息
+    if len(valid_apis) > 1:
+        # 检查是否启用多API并发测试
+        api_concurrent = args.api_concurrent if hasattr(args, 'api_concurrent') else DEFAULT_API_CONCURRENT
+        
+        if api_concurrent > 1:
+            print(f"[信息] 检测到多API配置，将并发测试 {len(valid_apis)} 个API提供商（并发数: {api_concurrent}）:\n")
+        else:
+            print(f"[信息] 检测到多API配置，将依次测试 {len(valid_apis)} 个API提供商:\n")
+        
+        for idx, api in enumerate(valid_apis, 1):
+            print(f"  {idx}. {api.get('name', 'Unknown')} - {api.get('base_url')}")
+        print()
     
     try:
-        tester = ModelTester(
-            api_key=args.api_key,
-            base_url=args.base_url,
-            timeout=args.timeout,
-            request_delay=args.request_delay,
-            max_retries=args.max_retries
-        )
+        # 获取API并发配置
+        api_concurrent = args.api_concurrent if hasattr(args, 'api_concurrent') else DEFAULT_API_CONCURRENT
         
-        tester.test_all_models(
-            test_message=args.message, 
-            output_file=args.output,
-            test_vision=not args.skip_vision,
-            test_audio=not args.skip_audio,
-            test_embedding=not args.skip_embedding,
-            test_image_gen=not args.skip_image_gen
-        )
+        # 如果多个API且启用并发
+        if len(valid_apis) > 1 and api_concurrent > 1:
+            from concurrent.futures import ThreadPoolExecutor, as_completed
+            import threading
+            
+            # 打印多API并发表头
+            print(f"{'='*SEPARATOR_WIDTH_MULTI_API}")
+            print("多API并发测试模式")
+            print(f"{'='*SEPARATOR_WIDTH_MULTI_API}")
+            print(f"测试时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+            print(f"并发API数: {min(api_concurrent, len(valid_apis))}")
+            print(f"{'='*SEPARATOR_WIDTH_MULTI_API}\n")
+            sys.stdout.flush()
+            
+            # 打印统一表头
+            col_widths = {
+                'api_name': COL_WIDTH_API_NAME,
+                'model': COL_WIDTH_MODEL,
+                'time': COL_WIDTH_TIME,
+                'error': COL_WIDTH_ERROR,
+                'content': COL_WIDTH_CONTENT
+            }
+            
+            print(f"{'='*TABLE_WIDTH_MULTI_API}")
+            header = (
+                f"{pad_string('API名称', col_widths['api_name'], 'left')} | "
+                f"{pad_string('模型名称', col_widths['model'], 'left')} | "
+                f"{pad_string('响应时间', col_widths['time'], 'center')} | "
+                f"{pad_string('错误信息', col_widths['error'], 'center')} | "
+                f"{pad_string('响应内容', col_widths['content'], 'left')}"
+            )
+            print(header)
+            print(f"{'-'*TABLE_WIDTH_MULTI_API}")
+            sys.stdout.flush()
+            
+            # 创建线程池并发测试
+            print_lock = threading.Lock()
+            completed_apis = []
+            
+            with ThreadPoolExecutor(max_workers=min(api_concurrent, len(valid_apis))) as executor:
+                # 提交所有API测试任务
+                future_to_api = {
+                    executor.submit(test_single_api, api_config, True, print_lock): api_config
+                    for api_config in valid_apis
+                }
+                
+                # 等待所有任务完成
+                for future in as_completed(future_to_api):
+                    try:
+                        result = future.result()
+                        completed_apis.append(result)
+                        
+                        # 打印完成通知
+                        with print_lock:
+                            print(f"\n{'='*TABLE_WIDTH_MULTI_API}")
+                            print(f"[{result['api_name']}] 测试完成")
+                            print(f"{'='*TABLE_WIDTH_MULTI_API}\n")
+                            sys.stdout.flush()
+                    except Exception as e:
+                        api_config = future_to_api[future]
+                        api_name = api_config.get('name', 'Unknown')
+                        logger.error(f"测试API {api_name} 时发生异常: {e}")
+                        with print_lock:
+                            print(f"\n[错误] {api_name} 测试失败: {e}\n")
+                            sys.stdout.flush()
+            
+            # 打印总结
+            print(f"\n{'='*SEPARATOR_WIDTH_MULTI_API}")
+            print(f"批量测试完成！共测试了 {len(completed_apis)} 个API提供商")
+            print(f"{'='*SEPARATOR_WIDTH_MULTI_API}\n")
+            print("各API测试结果已保存到对应的目录：")
+            for api_config in valid_apis:
+                from urllib.parse import urlparse
+                parsed = urlparse(api_config.get('base_url', ''))
+                domain = parsed.netloc or 'unknown'
+                print(f"  - {api_config.get('name')}: test_results/{domain}/")
+            print()
+        
+        else:
+            # 顺序测试所有API（原有逻辑）
+            for api_idx, api_config in enumerate(valid_apis, 1):
+                api_name = api_config.get('name', 'Unknown')
+                api_key = api_config.get('key')
+                base_url = api_config.get('base_url')
+                
+                # 如果是多API模式，显示当前测试的API
+                if len(valid_apis) > 1:
+                    print(f"\n{'='*110}")
+                    print(f"[{api_idx}/{len(valid_apis)}] 开始测试: {api_name}")
+                    print(f"{'='*110}\n")
+                
+                # 获取API特定的配置
+                timeout = api_config.get('timeout', DEFAULT_TIMEOUT)
+                request_delay = api_config.get('request_delay', DEFAULT_REQUEST_DELAY)
+                
+                # 性能配置
+                performance_config = api_config.get('performance', {})
+                max_retries = performance_config.get('retry_times', DEFAULT_MAX_RETRIES)
+                concurrent = performance_config.get('concurrent', 1)
+                rate_limit_rpm = performance_config.get('rate_limit_rpm', 60)
+                
+                # 测试配置
+                testing_config = api_config.get('testing', {})
+                message = testing_config.get('message', DEFAULT_TEST_MESSAGE)
+                skip_vision = testing_config.get('skip_vision', False)
+                skip_audio = testing_config.get('skip_audio', False)
+                skip_embedding = testing_config.get('skip_embedding', False)
+                skip_image_gen = testing_config.get('skip_image_gen', False)
+                
+                # 输出配置
+                output_config = api_config.get('output', {})
+                output_file = output_config.get('file', DEFAULT_OUTPUT_FILE)
+                
+                # 创建测试器
+                tester = ModelTester(
+                    api_key=api_key,
+                    base_url=base_url,
+                    timeout=timeout,
+                    request_delay=request_delay,
+                    max_retries=max_retries,
+                    concurrent=concurrent,
+                    rate_limit_rpm=rate_limit_rpm,
+                    api_name=api_name
+                )
+                
+                # 执行测试
+                tester.test_all_models(
+                    test_message=message, 
+                    output_file=output_file,
+                    test_vision=not skip_vision,
+                    test_audio=not skip_audio,
+                    test_embedding=not skip_embedding,
+                    test_image_gen=not skip_image_gen
+                )
+                
+                # 如果是多API模式且不是最后一个，添加分隔和延迟
+                if len(valid_apis) > 1 and api_idx < len(valid_apis):
+                    print(f"\n{'='*110}")
+                    print(f"[{api_idx}/{len(valid_apis)}] {api_name} 测试完成，准备测试下一个API...")
+                    print(f"{'='*110}\n")
+                    time.sleep(2)  # 短暂延迟，避免过快切换
+            
+            # 多API测试完成总结
+            if len(valid_apis) > 1:
+                print(f"\n{'='*110}")
+                print(f"批量测试完成！共测试了 {len(valid_apis)} 个API提供商")
+                print(f"{'='*110}\n")
+                print("各API测试结果已保存到对应的目录：")
+                for api in valid_apis:
+                    from urllib.parse import urlparse
+                    parsed = urlparse(api.get('base_url', ''))
+                    domain = parsed.netloc or 'unknown'
+                    print(f"  - {api.get('name')}: test_results/{domain}/")
+                print()
     except KeyboardInterrupt:
         print("\n\n测试已取消")
         sys.exit(0)

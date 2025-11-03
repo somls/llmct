@@ -16,8 +16,11 @@
 - 📈 **自动分析报告** - 测试完成后自动生成API健康度评分和告警
 - 📂 **按 Base URL 分类保存** - 自动按 API 提供商分类保存测试结果，便于管理多个 API 的测试历史
 - 📉 **多次测试成功率统计** - 统计同一模型多次测试的成功率和性能趋势，支持历史数据分析
+- 🚀 **多API批量测试** - 支持在单个配置文件中配置多个API，一次性批量测试所有API提供商
+- ⚡ **并发测试加速** - 双层并发：支持并发测试多个API + 每个API内并发测试模型
+- 🎛️ **智能速率控制** - 自动根据配置的RPM限制调节请求速率，避免触发API限制
+- 🔀 **灵活测试模式** - 顺序/并发自由切换，支持 `--api-concurrent` 参数控制多API并发数
 - 📝 **统一日志** - 完整的日志记录系统
-- ⚡ **实时测试** - 专注实时测试，简洁高效
 
 ## 🚀 快速开始
 
@@ -30,6 +33,19 @@ pip install -r requirements.txt
 ```
 
 ### 基础使用
+
+**方式1：使用配置文件（推荐）**
+
+```bash
+# 1. 复制示例配置文件
+cp config_example.yaml config.yaml
+
+# 2. 编辑 config.yaml 填入你的 API 配置
+# 3. 运行测试（自动读取 config.yaml）
+python mct.py
+```
+
+**方式2：使用命令行参数**
 
 ```bash
 # 基础测试（结果自动保存到 test_results/{base_url}/test_YYYYMMDD_HHMMSS.json）
@@ -44,7 +60,7 @@ python mct.py --api-key sk-xxx --base-url https://api.openai.com --output result
 python mct.py --api-key sk-xxx --base-url https://api.openai.com --skip-vision --skip-audio
 
 # 调整请求延迟以适应API速率限制
-python mct.py --api-key sk-xxx --base-url https://api.openai.com --request-delay 1.0
+python mct.py --api-key sk-xxx --base-url https://api.openai.com --request-delay 3.0
 
 # 查看某个 API 提供商的历史统计
 python mct.py --analyze test_results/api.openai.com
@@ -52,10 +68,10 @@ python mct.py --analyze test_results/api.openai.com
 
 ### 历史统计分析
 
-LLMCT 会自动按 API 提供商分类保存测试结果，方便追踪模型性能趋势：
+所有测试结果都会**自动按base_url分类保存**，方便追踪模型性能趋势：
 
 ```bash
-# 运行多次测试以积累数据
+# 运行多次测试（结果自动保存到 test_results/api.openai.com/）
 python mct.py --api-key sk-xxx --base-url https://api.openai.com  # 第1次
 python mct.py --api-key sk-xxx --base-url https://api.openai.com  # 第2次
 python mct.py --api-key sk-xxx --base-url https://api.openai.com  # 第3次
@@ -64,40 +80,143 @@ python mct.py --api-key sk-xxx --base-url https://api.openai.com  # 第3次
 python mct.py --analyze test_results/api.openai.com
 ```
 
-**目录结构：**
+**自动分类保存：**
 ```
 test_results/
-├── api.openai.com/
+├── api.openai.com/              ← 所有OpenAI的测试历史
 │   ├── test_20250103_143022.json
 │   ├── test_20250103_150315.json
 │   └── analysis_20250103_163022.json
-└── api.anthropic.com/
-    └── test_20250103_144530.json
+├── api.deepseek.com/            ← 所有DeepSeek的测试历史
+│   └── test_20250103_144530.json
+└── localhost/                   ← 所有本地API的测试历史
+    └── test_20250103_151200.json
 ```
 
-### 配置文件
+### 配置文件（推荐）
 
-创建 `config.yaml`：
+使用配置文件可以避免每次都输入参数，且本地配置文件不会推送到远程仓库。
+
+```bash
+# 1. 复制示例配置
+cp config_example.yaml config.yaml
+
+# 2. 编辑 config.yaml 填入你的配置
+# 3. 运行测试
+python mct.py
+```
+
+#### 单API配置
+
+适合测试单个API提供商：
 
 ```yaml
-api:
-  key: ${LLMCT_API_KEY}
-  base_url: https://api.openai.com
-  timeout: 30
-
+# 全局配置
 testing:
   message: "hello"
-  skip_vision: false
-  skip_audio: false
 
-output:
-  file: test_results.txt
-  format: txt  # txt, json, csv, html
-
+# 性能配置
 performance:
-  retry_times: 3
-  retry_delay: 5
+  concurrent: 5  # 并发数（1=顺序，>1=并发）
+  rate_limit_rpm: 60  # 每分钟最大请求数
+
+# 单API配置
+api:
+  key: ${LLMCT_API_KEY}  # 支持环境变量
+  base_url: https://api.openai.com
+  timeout: 30
 ```
+
+#### 多API配置（批量测试）
+
+适合同时测试多个API提供商，支持**双层并发加速**：
+
+```yaml
+# 全局配置
+testing:
+  message: "hello"
+
+# 性能配置
+performance:
+  concurrent: 10  # 【第1层】每个API内部的模型并发数
+  rate_limit_rpm: 120  # 每分钟最大请求数
+
+# 多API列表
+apis:
+  - name: OpenAI
+    key: ${OPENAI_API_KEY}
+    base_url: https://api.openai.com
+    enabled: true
+  
+  - name: DeepSeek
+    key: ${DEEPSEEK_API_KEY}
+    base_url: https://api.deepseek.com
+    enabled: true
+    performance:  # 为该API定制性能配置
+      concurrent: 5
+      rate_limit_rpm: 60
+    testing:
+      message: "你好"
+  
+  - name: LocalAPI
+    key: sk-local-key
+    base_url: http://localhost:8000
+    enabled: false
+    performance:
+      concurrent: 20  # 本地API可更高并发
+      rate_limit_rpm: 300
+```
+
+**运行方式：**
+```bash
+# 顺序测试（默认）- 一个API完成后再测试下一个
+python mct.py
+
+# 【第2层】并发测试多个API - 同时测试3个API，显著提升总体速度
+python mct.py --api-concurrent 3
+```
+
+**双层并发说明：**
+- **第1层并发**（`concurrent`）：每个API内部并发测试多个模型（默认5-10）
+- **第2层并发**（`--api-concurrent`）：同时并发测试多个API（默认1）
+- **组合效果**：3个API × 每个10并发 = 最多30个并发请求
+
+**输出说明：**
+
+无论单API还是多API模式，测试结果都会**自动按base_url分类保存**到独立目录：
+
+```
+test_results/
+├── api.openai.com/              ← OpenAI API的所有测试结果
+│   ├── test_20250103_143022.txt
+│   ├── test_20250103_150315.txt
+│   └── ...
+├── api.deepseek.com/            ← DeepSeek API的所有测试结果
+│   ├── test_20250103_143155.txt
+│   └── ...
+└── localhost/                   ← 本地API的所有测试结果
+    └── test_20250103_143310.txt
+```
+
+**优势：**
+- 不同API的测试结果自动隔离，互不干扰
+- 便于查看和对比各API的历史测试记录  
+- 全局 `output.file` 配置仅作为文件名模板，实际保存路径由base_url决定
+
+**性能优化：**
+- **第1层：模型并发**（`concurrent`）：每个API内部并发测试模型
+  - 小规模测试（<50模型）：`concurrent: 3-5`
+  - 大规模测试（>100模型）：`concurrent: 10`
+  - 本地API：`concurrent: 20`
+- **第2层：API并发**（`--api-concurrent`）：同时测试多个API
+  - 顺序测试（默认）：`--api-concurrent 1`
+  - 并发测试：`--api-concurrent 3`（同时测试3个API）
+  - 建议：不超过实际API数量
+- **速率控制**：`rate_limit_rpm` 自动调节请求间隔，避免触发API限制
+  - 计算公式：请求间隔 = 60秒 / rate_limit_rpm
+  - 并发模式下自动应用，无需手动设置 `request_delay`
+
+**注意：** `config.yaml` 和 `test_results/` 目录已添加到 `.gitignore`，不会被推送到远程仓库。
 
 运行：
 
@@ -148,7 +267,7 @@ python mct.py --api-key sk-xxx --base-url https://api.openai.com --output benchm
 ### 控制台输出
 ```
 ==================================================================================================================
-大模型连通性和可用性测试 [精简版]
+大模型连通性和可用性测试
 Base URL: https://api.openai.com
 测试时间: 2025-01-17 10:30:00
 ==================================================================================================================
@@ -197,7 +316,7 @@ test-model                      -           HTTP_403
 ### 测试配置
 - `--message TEXT` - 测试消息（默认："hello"）
 - `--timeout N` - 超时时间（秒，默认30）
-- `--request-delay N` - 请求之间的延迟（秒，默认1.0）
+- `--request-delay N` - 请求之间的延迟（秒，默认3.0）
 - `--max-retries N` - 429错误最大重试次数（默认3）
 
 ### 输出格式
@@ -213,6 +332,12 @@ test-model                      -           HTTP_403
 - `--skip-embedding` - 跳过嵌入模型测试
 - `--skip-image-gen` - 跳过图像生成模型测试
 
+### 并发控制
+- `--api-concurrent N` - 多API并发测试数（默认1）
+  - `1`：顺序测试，一个API完成后再测试下一个
+  - `3`：同时测试3个API（推荐）
+  - 建议不超过实际配置的API数量
+
 ### 示例
 ```bash
 # 查看所有参数
@@ -224,7 +349,7 @@ python mct.py \
   --base-url https://api.openai.com \
   --message "测试消息" \
   --timeout 60 \
-  --request-delay 2.0 \
+  --request-delay 3.0 \
   --output results.html \
   --skip-vision
 ```
@@ -284,4 +409,4 @@ pytest tests/ --cov=llmct --cov-report=html
 
 **Python版本:** 3.7+
 
-**版本:** v2.4.0
+**版本:** v2.5.0

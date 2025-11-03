@@ -1,8 +1,9 @@
-# 测试结果
+# 测试结果（不推送到远程）
 test_results/
 test_results*.txt
 test_results*.json
 test_results*.html
+test_results*.csv
 *_analysis.json
 *.result.txt
 
@@ -16,10 +17,10 @@ test_results*.html
 !examples/*.json
 !examples/*.html
 
-# 配置文件（包含敏感信息）
+# 配置文件（包含敏感信息，不推送到远程）
 config.yaml
 config_*.yaml
-!config_template.yaml
+!config_example.yaml
 .env
 .env.*
 

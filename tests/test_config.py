@@ -5,7 +5,7 @@ from llmct.utils.config import Config
 
 
 def test_default_config():
-    """测试默认配置（v2.3精简版）"""
+    """测试默认配置"""
     config = Config()
     
     assert config.get('api.timeout') == 30
@@ -44,7 +44,7 @@ def test_set_config():
 
 
 def test_override_from_args():
-    """测试从命令行参数覆盖配置（v2.3精简版）"""
+    """测试从命令行参数覆盖配置"""
     config = Config()
     
     class Args:

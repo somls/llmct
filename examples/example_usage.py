@@ -1,7 +1,7 @@
 """
-v2.3 精简版使用示例
+LLMCT 使用示例
 
-注意：本示例基于v2.0-v2.2版本，部分功能在v2.3.0（精简版）中已移除：
+注意：本示例基于v2.0-v2.2版本，部分功能在v2.3.0中已移除：
 - 移除：缓存相关功能（example_1中的cache配置）
 - 移除：速率限制器（example_5）
 - 保留：分类器、日志、重试、报告、分析器等核心功能
@@ -19,15 +19,15 @@ sys.path.insert(0, str(project_root))
 
 
 def example_1_config_usage():
-    """示例1：使用配置文件（v2.3精简版）"""
+    """示例1：使用配置文件"""
     print("\n" + "="*60)
-    print("示例1：配置文件使用（精简版）")
+    print("示例1：配置文件使用")
     print("="*60)
     
     from llmct.utils.config import Config
     
     # 创建配置模板
-    Config.create_template('config_template.yaml')
+    Config.create_template('config_example.yaml')
     
     # 加载配置
     config = Config()
@@ -222,7 +222,7 @@ def example_7_analyzer():
 def main():
     """运行所有示例"""
     print("\n" + "="*60)
-    print("LLMCT v2.3 精简版功能示例")
+    print("LLMCT 功能示例")
     print("="*60)
     
     try:
@@ -237,7 +237,7 @@ def main():
         print("\n" + "="*60)
         print("[SUCCESS] 所有示例运行完成！")
         print("="*60)
-        print("\nv2.3.0 精简版特性：")
+        print("\n特性：")
         print("  - 移除缓存功能，专注实时测试")
         print("  - 新增自动分析报告（健康度评分+告警）")
         print("  - 简化命令行参数")

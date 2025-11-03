@@ -5,16 +5,21 @@
 # ============================================
 
 # 表格列宽
-COL_WIDTH_MODEL = 45
+COL_WIDTH_API_NAME = 12  # API名称列宽（用于多API并发模式）
+COL_WIDTH_MODEL = 38     # 模型名称列宽（多API模式下减少以容纳API名称）
 COL_WIDTH_TIME = 9
 COL_WIDTH_ERROR = 12
-COL_WIDTH_CONTENT = 40
+COL_WIDTH_CONTENT = 35   # 响应内容列宽（多API模式下减少以容纳API名称）
 
 # 表格总宽度（用于分隔线）
+# 单API模式：45 + 9 + 12 + 40 + 6 = 112
+# 多API模式：12 + 38 + 9 + 12 + 35 + 8 = 114
 TABLE_WIDTH = COL_WIDTH_MODEL + COL_WIDTH_TIME + COL_WIDTH_ERROR + COL_WIDTH_CONTENT + 6  # 6个分隔符空格
+TABLE_WIDTH_MULTI_API = COL_WIDTH_API_NAME + COL_WIDTH_MODEL + COL_WIDTH_TIME + COL_WIDTH_ERROR + COL_WIDTH_CONTENT + 8  # 8个分隔符空格
 
 # 通用分隔线宽度
 SEPARATOR_WIDTH = 110
+SEPARATOR_WIDTH_MULTI_API = 114  # 多API模式分隔线宽度
 
 # ============================================
 # 测试默认值
@@ -27,7 +32,7 @@ DEFAULT_TEST_MESSAGE = "hello"
 DEFAULT_TIMEOUT = 30
 
 # 默认请求延迟（秒）- 避免触发速率限制
-DEFAULT_REQUEST_DELAY = 1.0
+DEFAULT_REQUEST_DELAY = 3.0
 
 # 默认最大重试次数（429错误）
 DEFAULT_MAX_RETRIES = 3
@@ -128,6 +133,9 @@ MAX_RPM = 120
 # 重试相关
 RETRY_BACKOFF_FACTOR = 2.0
 RETRY_DEFAULT_DELAY = 1.0
+
+# 并发测试默认值
+DEFAULT_API_CONCURRENT = 1  # 默认不并发测试多个API（顺序测试）
 
 # ============================================
 # 模型类型

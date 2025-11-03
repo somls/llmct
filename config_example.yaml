@@ -1,0 +1,217 @@
+# ============================================================================
+# 大模型连通性测试工具 - 配置文件示例
+# ============================================================================
+# 自动适配单API或多API配置
+# 配置文件支持环境变量（使用 ${VAR_NAME} 格式）
+
+# ============================================================================
+# 全局配置（适用于所有API）
+# ============================================================================
+
+# 测试配置
+testing:
+  message: "hello"  # 测试消息（默认: hello）
+  skip_vision: false  # 跳过视觉模型测试（默认: false）
+  skip_audio: false  # 跳过音频模型测试（默认: false）
+  skip_embedding: false  # 跳过嵌入模型测试（默认: false）
+  skip_image_gen: false  # 跳过图像生成模型测试（默认: false）
+
+# 输出配置
+output:
+  file: test_results.txt  # 输出文件名模板（默认: test_results.txt）
+  format: txt  # 输出格式：txt, json, csv, html（默认: txt）
+  # 注意：实际保存路径为 test_results/{base_url}/test_{timestamp}.{format}
+  # 例如：test_results/api.openai.com/test_20250103_143022.txt
+
+# 性能配置
+performance:
+  concurrent: 5  # 并发测试数（默认: 1，建议: 3-10）
+  rate_limit_rpm: 60  # 速率限制-每分钟最大请求数（默认: 60，范围: 10-120）
+  retry_times: 3  # 429错误最大重试次数（默认: 3）
+  retry_delay: 5  # 重试延迟秒数（暂未使用，预留）
+  request_delay: 3.0  # 顺序模式下请求间延迟秒数（默认: 3.0，并发模式时自动由rate_limit_rpm控制）
+
+# 日志配置
+logging:
+  level: INFO  # 日志级别：DEBUG, INFO, WARNING, ERROR, CRITICAL（默认: INFO）
+  file: null  # 日志文件路径，null表示不输出到文件（默认: null）
+
+
+# ============================================================================
+# API配置（二选一）
+# ============================================================================
+# 
+# 方式1：单API配置
+#   适用于只测试一个API提供商的场景
+#   取消下方注释，并注释掉 apis 部分
+#
+# api:
+#   key: ${LLMCT_API_KEY}  # API密钥（必填，支持环境变量）
+#   base_url: https://api.openai.com  # API基础URL（必填）
+#   timeout: 30  # 请求超时时间（秒，可选，默认: 30）
+#
+# ============================================================================
+# 
+# 方式2：多API批量测试配置
+#   适用于同时测试多个API提供商的场景
+#   工具会自动检测并批量测试所有 enabled: true 的API
+#
+apis:
+  # ==================== OpenAI 官方 API ====================
+  - name: OpenAI  # API名称，用于标识和日志输出
+    key: ${OPENAI_API_KEY}  # API密钥（必填）
+    base_url: https://api.openai.com  # API基础URL（必填）
+    timeout: 30  # 请求超时秒数（可选，默认: 30）
+    request_delay: 3.0  # 请求延迟秒数（可选，默认: 3.0，覆盖全局配置）
+    enabled: true  # 是否启用此API测试（可选，默认: true）
+    # testing:  # API特定测试配置（可选，覆盖全局testing配置）
+    #   message: "hello"
+    #   skip_vision: false
+    #   skip_audio: false
+    #   skip_embedding: false
+    #   skip_image_gen: false
+  
+  # ==================== DeepSeek API ====================
+  - name: DeepSeek
+    key: ${DEEPSEEK_API_KEY}
+    base_url: https://api.deepseek.com
+    timeout: 30
+    request_delay: 2.0  # DeepSeek可能有不同的速率限制
+    enabled: true
+    testing:  # DeepSeek的定制配置
+      message: "你好"  # 使用中文测试消息
+      skip_vision: true  # DeepSeek主要是语言模型
+      skip_audio: true
+      skip_embedding: false
+      skip_image_gen: true
+  
+  # ==================== Anthropic Claude API ====================
+  - name: Anthropic
+    key: ${ANTHROPIC_API_KEY}
+    base_url: https://api.anthropic.com
+    timeout: 30
+    request_delay: 3.0
+    enabled: false  # 暂时不启用，需要时改为 true
+  
+  # ==================== 本地部署的API ====================
+  - name: LocalAPI
+    key: sk-local-key  # 本地API密钥
+    base_url: http://localhost:8000
+    timeout: 60  # 本地API可能需要更长超时
+    request_delay: 1.0  # 本地无速率限制，可以更快
+    enabled: false  # 默认不启用，根据需要开启
+    testing:
+      message: "test"
+  
+  # ==================== 第三方API代理示例 ====================
+  # - name: CustomProxy
+  #   key: ${CUSTOM_API_KEY}
+  #   base_url: https://custom-api-proxy.example.com
+  #   timeout: 30
+  #   request_delay: 3.0
+  #   enabled: false
+  #   testing:
+  #     message: "hello"
+
+
+# ============================================================================
+# 使用说明
+# ============================================================================
+# 
+# 【配置方式】
+#   1. 单API测试：配置 api 部分，注释掉 apis 部分
+#   2. 多API测试：配置 apis 列表，注释掉 api 部分
+#   3. 工具会自动检测使用哪种配置
+# 
+# 【环境变量】
+#   - 使用 ${VAR_NAME} 格式引用环境变量
+#   - 示例：key: ${OPENAI_API_KEY}
+#   - 如果环境变量不存在，会保留原始的 ${VAR_NAME} 字符串
+# 
+# 【运行方式】
+#   - 基础运行：python mct.py
+#   - 指定配置文件：python mct.py --config my_config.yaml
+#   - 命令行覆盖：python mct.py --api-key sk-xxx --base-url https://api.openai.com
+#   - 分析历史数据：python mct.py --analyze test_results/api.openai.com
+# 
+# 【命令行参数】（优先级高于配置文件）
+#   --config CONFIG       配置文件路径（默认: config.yaml）
+#   --api-key KEY         API密钥（覆盖配置文件，仅单API模式）
+#   --base-url URL        API基础URL（覆盖配置文件，仅单API模式）
+#   --message MSG         测试消息（默认: hello）
+#   --timeout N           超时时间秒数（默认: 30）
+#   --request-delay N     请求延迟秒数（默认: 3.0）
+#   --max-retries N       最大重试次数（默认: 3）
+#   --output FILE         输出文件路径（默认: test_results.txt）
+#   --skip-vision         跳过视觉模型测试
+#   --skip-audio          跳过音频模型测试
+#   --skip-embedding      跳过嵌入模型测试
+#   --skip-image-gen      跳过图像生成模型测试
+#   --analyze DIR         分析历史测试结果
+# 
+# 【性能优化】
+#   - 并发测试：设置 concurrent > 1 启用多线程并发测试，显著提升速度
+#   - 速率限制：rate_limit_rpm 控制每分钟最大请求数，避免触发API限制
+#   - 自动调节：并发模式下自动计算请求间隔 = 60秒 / rate_limit_rpm
+#   - 建议配置：
+#     * 小规模测试（<50个模型）：concurrent=3-5, rate_limit_rpm=60
+#     * 大规模测试（>100个模型）：concurrent=10, rate_limit_rpm=120
+#     * 保守策略：concurrent=1（顺序模式）, request_delay=3.0
+# 
+# 【多API特性】
+#   - 自动批量测试多个API（默认按配置顺序依次测试）
+#   - 支持并发测试多个API（使用 --api-concurrent 参数）
+#   - 每个API的测试结果自动保存到独立目录（按base_url分类）
+#   - 支持为每个API设置不同的测试参数（包括并发和速率限制）
+#   - 支持启用/禁用特定API（enabled: true/false）
+#   - 未配置的参数自动使用全局配置
+#   - 顺序测试模式：测试间会有2秒延迟，避免过快切换
+#   - 并发测试模式：多个API同时测试，实时显示所有API的测试结果
+# 
+# 【输出说明】
+#   - 保存路径格式：test_results/{base_url}/test_{timestamp}.{format}
+#   - base_url会自动转换为安全的目录名（移除协议、特殊字符）
+#   - 每次测试生成新文件，不会覆盖历史记录
+#   - 支持的格式：txt, json, csv, html
+# 
+# 【输出结构示例】
+#   test_results/
+#   ├── api.openai.com/              ← OpenAI的所有测试历史
+#   │   ├── test_20250103_143022.txt
+#   │   ├── test_20250103_150315.txt
+#   │   └── analysis_20250103_163022.json  ← 自动生成的分析报告
+#   ├── api.deepseek.com/            ← DeepSeek的所有测试历史
+#   │   └── test_20250103_143155.txt
+#   └── localhost/                   ← 本地API的所有测试历史
+#       └── test_20250103_143310.txt
+# 
+# 【优势特性】
+#   - 不同API的测试结果自动隔离，互不干扰
+#   - 便于查看和对比各API的历史测试记录
+#   - 支持 --analyze 分析特定API的历史数据，统计成功率和性能趋势
+#   - 自动生成健康度评分和告警信息
+#   - 环境变量支持，保护敏感信息
+# 
+# 【常见场景示例】
+#   # 单API快速测试
+#   python mct.py --api-key sk-xxx --base-url https://api.openai.com
+# 
+#   # 多API顺序测试（使用配置文件）
+#   python mct.py  # 自动读取 config.yaml，依次测试所有启用的API
+# 
+#   # 多API并发测试（3个API同时测试）
+#   python mct.py --api-concurrent 3
+# 
+#   # 分析OpenAI的历史测试数据
+#   python mct.py --analyze test_results/api.openai.com
+# 
+#   # 自定义配置文件
+#   python mct.py --config production.yaml
+# 
+# 【并发测试说明】
+#   - --api-concurrent 1（默认）：顺序测试，一个API完成后再测试下一个
+#   - --api-concurrent 3：最多同时测试3个API，显著提升总体测试速度
+#   - 并发模式下，所有API的测试结果混合显示，每行前缀API名称便于区分
+#   - 表格格式：API名称 | 模型名称 | 响应时间 | 错误信息 | 响应内容
+#   - 建议并发数不超过API数量，过高的并发可能触发网络限制
+# ============================================================================
