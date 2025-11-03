@@ -1,4 +1,5 @@
-# 测试结果文件
+# 测试结果文件和目录
+test_results/
 test_results.txt
 test_results_*.txt
 test_results_*.html
@@ -139,6 +140,7 @@ docs/.doctrees/
 *_backup.*
 
 # 临时测试和分析文件（应该在根目录也被忽略）
+/test_results/
 /test_results.txt
 /test_results_*.txt
 /test_results_*.json
