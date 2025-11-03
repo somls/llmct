@@ -1,283 +1,91 @@
-# 测试结果文件和目录
+# 测试结果
 test_results/
-test_results.txt
-test_results_*.txt
-test_results_*.html
+test_results*.txt
+test_results*.json
+test_results*.html
+*_analysis.json
 *.result.txt
-test_analysis.md
+
+# 输出文件（保留示例文件）
 *.html
 *.csv
 *.json
 !example_*.json
 !example_*.csv
 !example_*.html
-!example_output.html
-!package.json
-!package-lock.json
+!examples/*.json
+!examples/*.html
 
-# 临时分析和调试文件
-*_ANALYSIS.md
-*_TEST_*.md
-*_SUMMARY.md
-*_FIX.md
-*_OPTIMIZATION*.md
-*_COMPLETE.md
-*_REPORT.md
-*_RECOMMENDATIONS.md
-*_GUIDE.md
-*_PHASE*.md
-API_TEST_ANALYSIS.md
-OPTIMIZATION_SUMMARY.md
-TEST_REPORT_FINAL.md
-USAGE_GUIDE_*.md
-analyze_*.py
-check_*.py
-diagnose_*.py
-test_realtime_output.py
-one.txt
-*_analysis.json
-api_*.json
-test_config.yaml
-
-# 临时配置文件（包含敏感信息）
-config_conservative.yaml
-config_one_*.yaml
-config_optimized*.yaml
-config_quick_test.yaml
-api_test_config.yaml
-config_hybgzs.yaml
+# 配置文件（包含敏感信息）
+config.yaml
 config_*.yaml
 !config_template.yaml
+.env
+.env.*
 
-# 保留重要文档（v2.3.0精简版）
-!FINAL_TEST_ANALYSIS.md
-!PROJECT_SIMPLIFICATION.md
-!CLEANUP_SUMMARY.md
-
-# 数据库文件（v2.3.0已移除缓存功能，但保留规则以防临时文件）
-*.db
-!schema.db
-
-# 临时调试和测试文件
-test_api_debug.py
-*_debug.py
+# 临时和调试文件
 *_temp.py
-quick_api_test.py
-quick_test.py
-test_*.py
-!tests/test_*.py
+*_debug.py
+temp_*
+tmp_*
 
-# Python缓存
+# Python
 __pycache__/
 *.py[cod]
-*$py.class
-*.so
-.Python
 *.pyc
+*.pyo
+*.so
 
 # 测试和覆盖率
 .pytest_cache/
 .coverage
 htmlcov/
-.tox/
 coverage.xml
 *.cover
+.tox/
+.nox/
 
 # 虚拟环境
 venv/
+.venv/
 env/
 ENV/
-.venv/
-env.bak/
-venv.bak/
 
-# IDE配置
+# IDE
 .vscode/
 .idea/
+*.sublime-*
 *.swp
 *.swo
 *~
-.project
-.pydevproject
-.settings/
 
-# 操作系统文件
+# 操作系统
 .DS_Store
 Thumbs.db
 desktop.ini
-*.lnk
+$RECYCLE.BIN/
 
-# 日志文件
+# 日志和临时文件
 *.log
 logs/
-
-# 临时文件
 *.tmp
 *.bak
-*.swp
-*~.nib
+*.backup
 
-# 打包文件
+# 打包和构建
 dist/
 build/
 *.egg-info/
 *.egg
 
-# 配置文件（包含敏感信息）
-config.yaml
-!config_template.yaml
-!example_config.yaml
-.env
-.env.local
-
-# 文档编译输出
-docs/_build/
-docs/.doctrees/
-
-# 备份文件
-*.bak
-*.backup
-*_backup.*
-
-# 临时测试和分析文件（应该在根目录也被忽略）
-/test_results/
-/test_results.txt
-/test_results_*.txt
-/test_results_*.json
-/test_results_*.html
-/test_analysis.md
-/test_results_analysis.json
-
-# 本地配置和数据库文件
-*.local.*
-config.local.*
-database.local.*
-cache.local.*
-
-# 证书和密钥文件（安全敏感）
+# 证书和密钥（安全）
 *.pem
+*.key
+*.crt
+*.cer
 *.p12
 *.pfx
-*.crt
-*.key
-*.cer
-*.der
-*.p7b
-*.p7c
-*.p7s
-*.ssl
-*.crl
-*.csr
 
-# Windows系统文件（额外保护）
-*.ntfs*
-*.lnk
-*.url
-*.website
-$RECYCLE.BIN/
-RECYCLER/
-*.cab
-*.msi
-*.msm
-*.msp
-
-# IDE和编辑器特定文件
-*.sublime-*
-.vscode/settings.json
-.vscode/launch.json
-.vscode/extensions.json
-.idea/workspace.xml
-.idea/tasks.xml
-.idea/dictionaries
-.idea/shelf
-.idea/contentModel.xml
-.idea/dataSources.ids
-.idea/dataSources.local.xml
-.idea/sqlDataSources.xml
-.idea/dynamic.xml
-.idea/uiDesigner.xml
-.idea/gradle.xml
-.idea/libraries
-.idea/mongoSettings.xml
-.idea/modules.xml
-.idea/.name
-.idea/compiler.xml
-.idea/copyright/profiles_settings.xml
-.idea/encodings.xml
-.idea/misc.xml
-.idea/modules.xml
-.idea/scopes/scope_settings.xml
-.idea/vcs.xml
-.idea/jsLibraryMappings.xml
-.idea/datasources.xml
-.idea/dataSources.ids
-.idea/sqlDataSources.xml
-.idea/dynamic.xml
-.idea/uiDesigner.xml
-
-# 代码质量工具
-.sonar/
-.coverage.py
-.coverage.html
-coverage/
-.coverage
-*.cover
-.hypothesis/
-.stestr/
-.testrepository/
-.tox/
-.nox/
-.pytest_cache/
-.cache/
+# 开发工具
 .mypy_cache/
 .dmypy.json
-dmypy.json
-.venv
-.conda
-.virtualenv
-
-# 开发工具配置
-.pre-commit-config.yaml.local
-.flake8
-.mypy.ini
-.pylint.d/*
-.pylintrc
-.pytest.ini
-.tox.ini
-coverage.cfg
-bandit.yaml
-
-# 调试和分析文件
-*.prof
-*.profile
-*.trace
-*.changelog
-*.debug
-*.dump
-*.stackdump
-*.crash
-*.dmp
-
-# 机器学习和数据文件
-*.model
-*.pkl
-*.pickle
-*.joblib
-*.h5
-*.hdf5
-*.pb
-*.onnx
-*.tflite
-*.caffemodel
-*.weights
-*.ckpt
-*.pth
-
-# 实验和临时代码
-experiment_*
-sandbox_*
-temp_*
-tmp_*
-scratch_*
-demo_*
-prototype_*
