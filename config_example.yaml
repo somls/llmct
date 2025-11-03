@@ -25,11 +25,12 @@ output:
 
 # 性能配置
 performance:
-  concurrent: 5  # 并发测试数（默认: 1，建议: 3-10）
+  concurrent: 1  # 【第1层】每个API内部的模型并发数（默认: 1，建议: 1-10）
   rate_limit_rpm: 60  # 速率限制-每分钟最大请求数（默认: 60，范围: 10-120）
   retry_times: 3  # 429错误最大重试次数（默认: 3）
   retry_delay: 5  # 重试延迟秒数（暂未使用，预留）
   request_delay: 3.0  # 顺序模式下请求间延迟秒数（默认: 3.0，并发模式时自动由rate_limit_rpm控制）
+  api_concurrent: 3  # 【第2层】多API并发数（默认: 1，建议: 3，1=顺序测试，>1=并发测试多个API）
 
 # 日志配置
 logging:
