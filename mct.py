@@ -1277,13 +1277,16 @@ def main():
     
     try:
         # 获取API并发配置（优先级：命令行参数 > 配置文件 > 默认值）
-        if hasattr(args, 'api_concurrent') and args.api_concurrent != DEFAULT_API_CONCURRENT:
-            # 命令行参数优先
+        # 从配置文件读取默认值
+        performance_config = config.config.get('performance', {})
+        config_api_concurrent = performance_config.get('api_concurrent', DEFAULT_API_CONCURRENT)
+        
+        # 命令行参数优先（如果明确指定了）
+        if hasattr(args, 'api_concurrent'):
             api_concurrent = args.api_concurrent
         else:
-            # 从配置文件读取
-            performance_config = config.config.get('performance', {})
-            api_concurrent = performance_config.get('api_concurrent', DEFAULT_API_CONCURRENT)
+            # 使用配置文件的值
+            api_concurrent = config_api_concurrent
         
         # 如果多个API且启用并发
         if len(valid_apis) > 1 and api_concurrent > 1:
