@@ -1294,6 +1294,8 @@ def main():
             sys.stdout.flush()
             
             # 打印统一表头
+            from llmct.utils import pad_string  # 导入pad_string函数
+            
             col_widths = {
                 'api_name': COL_WIDTH_API_NAME,
                 'model': COL_WIDTH_MODEL,
