@@ -202,10 +202,23 @@ class Config:
         else:
             merged['testing'] = self.config['testing'].copy()
         
-        # 使用全局输出和性能配置
-        merged['output'] = self.config['output'].copy()
-        merged['performance'] = self.config['performance'].copy()
-        merged['logging'] = self.config['logging'].copy()
+        # 合并输出配置（允许每API覆盖全局）
+        if 'output' in api_config and isinstance(api_config['output'], dict):
+            merged['output'] = {**self.config['output'], **api_config['output']}
+        else:
+            merged['output'] = self.config['output'].copy()
+
+        # 合并性能配置（允许每API覆盖全局）
+        if 'performance' in api_config and isinstance(api_config['performance'], dict):
+            merged['performance'] = {**self.config['performance'], **api_config['performance']}
+        else:
+            merged['performance'] = self.config['performance'].copy()
+
+        # 合并日志配置（允许每API覆盖全局）
+        if 'logging' in api_config and isinstance(api_config['logging'], dict):
+            merged['logging'] = {**self.config['logging'], **api_config['logging']}
+        else:
+            merged['logging'] = self.config['logging'].copy()
         
         return merged
     

@@ -20,6 +20,9 @@ from llmct.core.reporter import Reporter
 from llmct.core.analyzer import ResultAnalyzer
 from llmct.utils.logger import get_logger
 from llmct.utils import display_width, pad_string, truncate_string
+from llmct.utils.rate_limiter import RateLimiter, AdaptiveRateLimiter
+from llmct.utils.buffered_output import BufferedOutput
+from llmct.constants import MIN_RPM, MAX_RPM
 from llmct.constants import (
     COL_WIDTH_MODEL, COL_WIDTH_TIME, COL_WIDTH_ERROR, COL_WIDTH_CONTENT,
     COL_WIDTH_API_NAME, TABLE_WIDTH, TABLE_WIDTH_MULTI_API,
@@ -50,41 +53,57 @@ if sys.platform == 'win32':
 
 
 class ModelTester:
-    def __init__(self, api_key: str, base_url: str, timeout: int = 30, 
+    def __init__(self, api_key: str, base_url: str, timeout: int = 30,
                  request_delay: float = 1.0, max_retries: int = 3,
-                 concurrent: int = 1, rate_limit_rpm: int = 60, api_name: str = None):
+                 concurrent: int = 1, rate_limit_rpm: int = 60, api_name: str = None,
+                 adaptive_rate: bool = False):
         self.api_key = api_key
         self.base_url = base_url.rstrip('/')
         self.api_name = api_name or base_url  # API名称用于显示
         self.timeout = timeout
-        
+
+        # 并发和速率限制配置（提前定义，避免后续引用错误）
+        self.concurrent = max(1, concurrent)  # 并发数，至少为1
+        self.rate_limit_rpm = max(1, rate_limit_rpm)  # 每分钟请求数，至少为1
+
         # 请求头
         self.headers = {
             'Authorization': f'Bearer {api_key}',
             'Content-Type': 'application/json'
         }
-        
+
         # 使用requests.Session提升性能
         self.session = requests.Session()
         self.session.headers.update(self.headers)
-        
+        # 配置连接池大小与并发匹配，减少队列阻塞
+        try:
+            from requests.adapters import HTTPAdapter
+            # 优化：增加连接池大小，提升并发性能
+            pool_size = max(10, self.concurrent * 3)
+            adapter = HTTPAdapter(
+                pool_connections=pool_size,
+                pool_maxsize=pool_size,
+                max_retries=0,  # 禁用内部重试，使用自己的重试机制
+                pool_block=False  # 避免阻塞
+            )
+            self.session.mount('http://', adapter)
+            self.session.mount('https://', adapter)
+        except Exception as e:
+            logger.warning(f"连接池配置失败: {e}")
+
         # 使用模型分类器
         self.classifier = ModelClassifier()
-        
+
         # 统计和配置
         self.error_stats = {}  # 错误统计
         self.request_delay = request_delay  # 降低默认延迟到1秒
         self.max_retries = max_retries      # 429错误最大重试次数
-        
-        # 并发和速率限制配置
-        self.concurrent = max(1, concurrent)  # 并发数，至少为1
-        self.rate_limit_rpm = max(1, rate_limit_rpm)  # 每分钟请求数，至少为1
-        self.min_interval = 60.0 / self.rate_limit_rpm  # 最小请求间隔（秒）
-        self.last_request_time = 0  # 上次请求时间
-        
-        # 线程安全锁（用于速率限制）
-        import threading
-        self.rate_lock = threading.Lock()
+        # 限速控制器：默认滑动窗口；可选自适应（默认关闭以保持行为一致）
+        self.rate_controller = (
+            AdaptiveRateLimiter(initial_rpm=self.rate_limit_rpm, min_rpm=MIN_RPM, max_rpm=MAX_RPM)
+            if adaptive_rate else
+            RateLimiter(max_calls=self.rate_limit_rpm, period=60.0)
+        )
     
     def __enter__(self):
         """上下文管理器入口"""
@@ -155,15 +174,7 @@ class ModelTester:
     
     def _wait_for_rate_limit(self):
         """根据速率限制等待适当的时间"""
-        with self.rate_lock:
-            current_time = time.time()
-            time_since_last = current_time - self.last_request_time
-            
-            if time_since_last < self.min_interval:
-                sleep_time = self.min_interval - time_since_last
-                time.sleep(sleep_time)
-            
-            self.last_request_time = time.time()
+        self.rate_controller.wait_if_needed()
     
     def _make_request_with_retry(self, method: str, url: str, **kwargs) -> requests.Response:
         """
@@ -195,6 +206,8 @@ class ModelTester:
                     response = self.session.get(url, timeout=timeout, **kwargs)
                 elif method.upper() == 'POST':
                     response = self.session.post(url, timeout=timeout, **kwargs)
+                elif method.upper() == 'OPTIONS':
+                    response = self.session.options(url, timeout=timeout, **kwargs)
                 else:
                     raise ValueError(f"Unsupported HTTP method: {method}")
                 
@@ -212,12 +225,24 @@ class ModelTester:
                             pass
                     
                     logger.warning(f"速率限制: 收到429错误，等待{wait_time}秒后重试 (第{attempt + 1}次重试)")
+                    # 自适应：上报429
+                    try:
+                        if isinstance(self.rate_controller, AdaptiveRateLimiter):
+                            self.rate_controller.report_rate_limit(wait_time)
+                    except Exception:
+                        pass
                     time.sleep(wait_time)
                     logger.info("重试继续")
                     continue
                 
                 # 其他错误或成功，直接返回
                 response.raise_for_status()
+                # 自适应：成功上报
+                try:
+                    if isinstance(self.rate_controller, AdaptiveRateLimiter):
+                        self.rate_controller.report_success()
+                except Exception:
+                    pass
                 return response
                 
             except requests.exceptions.HTTPError as e:
@@ -264,8 +289,11 @@ class ModelTester:
         
         try:
             url = f"{self.base_url}/v1/models"
-            response = requests.get(url, headers=self.headers, timeout=self.timeout)
-            response.raise_for_status()
+            response = self._make_request_with_retry(
+                'GET',
+                url,
+                timeout=self.timeout
+            )
             data = response.json()
             
             if 'data' in data:
@@ -302,7 +330,6 @@ class ModelTester:
             response = self._make_request_with_retry(
                 'POST',
                 url, 
-                headers=self.headers, 
                 json=payload, 
                 timeout=self.timeout
             )
@@ -353,7 +380,6 @@ class ModelTester:
             response = self._make_request_with_retry(
                 'POST',
                 url, 
-                headers=self.headers, 
                 json=payload, 
                 timeout=self.timeout
             )
@@ -388,7 +414,11 @@ class ModelTester:
             # 先尝试ASR端点
             url = f"{self.base_url}{API_ENDPOINT_AUDIO_TRANSCRIPTIONS}"
             start_time = time.time()
-            response = requests.options(url, headers=self.headers, timeout=self.timeout)
+            response = self._make_request_with_retry(
+                'OPTIONS',
+                url,
+                timeout=self.timeout
+            )
             response_time = time.time() - start_time
             
             if response.status_code in [200, 405]:  # 405表示方法不允许，但端点存在
@@ -396,7 +426,11 @@ class ModelTester:
             else:
                 # 尝试TTS端点
                 url = f"{self.base_url}{API_ENDPOINT_AUDIO_SPEECH}"
-                response = requests.options(url, headers=self.headers, timeout=self.timeout)
+                response = self._make_request_with_retry(
+                    'OPTIONS',
+                    url,
+                    timeout=self.timeout
+                )
                 if response.status_code in [200, 405]:
                     return True, response_time, '', 'TTS端点可用'
                 return False, response_time, f'HTTP_{response.status_code}', ''
@@ -427,7 +461,6 @@ class ModelTester:
             response = self._make_request_with_retry(
                 'POST',
                 url, 
-                headers=self.headers, 
                 json=payload, 
                 timeout=self.timeout
             )
@@ -470,7 +503,6 @@ class ModelTester:
             response = self._make_request_with_retry(
                 'POST',
                 url, 
-                headers=self.headers, 
                 json=payload, 
                 timeout=self.timeout
             )
@@ -506,7 +538,6 @@ class ModelTester:
             response = self._make_request_with_retry(
                 'GET',
                 url, 
-                headers=self.headers, 
                 timeout=self.timeout
             )
             response_time = time.time() - start_time
@@ -571,95 +602,97 @@ class ModelTester:
     def _test_models_sequential(self, models: List[Dict], test_message: str, test_vision: bool,
                                 test_audio: bool, test_embedding: bool, test_image_gen: bool,
                                 api_name: str = None) -> List[Dict]:
-        """顺序测试模型（原有逻辑）"""
+        """顺序测试模型（优化：使用缓冲输出）"""
         results = []
-        
+
         col_widths = {
             'model': COL_WIDTH_MODEL,
             'time': COL_WIDTH_TIME,
             'error': COL_WIDTH_ERROR,
             'content': COL_WIDTH_CONTENT
         }
-        
+
         # 如果是多API模式，添加API名称列
         if api_name:
             col_widths['api_name'] = COL_WIDTH_API_NAME
-        
-        for idx, model in enumerate(models, 1):
-            result = self._test_single_model(model, test_message, test_vision, 
-                                            test_audio, test_embedding, test_image_gen)
-            results.append(result)
-            
-            # 立即输出当前测试结果
-            row = self.format_row(result['model'], result['success'], result['response_time'],
-                                 result['error_code'], result['content'], col_widths, api_name)
-            print(row)
-            sys.stdout.flush()
-            
-            # 添加请求之间的延迟
-            if idx < len(models) and self.request_delay > 0:
-                time.sleep(self.request_delay)
-        
+
+        # 使用缓冲输出提升性能
+        with BufferedOutput(buffer_size=50) as buffer:
+            for idx, model in enumerate(models, 1):
+                result = self._test_single_model(model, test_message, test_vision,
+                                                test_audio, test_embedding, test_image_gen)
+                results.append(result)
+
+                # 添加到缓冲区
+                row = self.format_row(result['model'], result['success'], result['response_time'],
+                                     result['error_code'], result['content'], col_widths, api_name)
+                buffer.add(row)
+
+                # 添加请求之间的延迟
+                if idx < len(models) and self.request_delay > 0:
+                    time.sleep(self.request_delay)
+
         return results
     
     def _test_models_concurrent(self, models: List[Dict], test_message: str, test_vision: bool,
                                 test_audio: bool, test_embedding: bool, test_image_gen: bool,
                                 api_name: str = None) -> List[Dict]:
-        """并发测试模型"""
+        """并发测试模型（优化：使用缓冲输出）"""
         from concurrent.futures import ThreadPoolExecutor, as_completed
         import threading
-        
+
         results = []
         results_lock = threading.Lock()
-        
+
         col_widths = {
             'model': COL_WIDTH_MODEL,
             'time': COL_WIDTH_TIME,
             'error': COL_WIDTH_ERROR,
             'content': COL_WIDTH_CONTENT
         }
-        
+
         # 如果是多API模式，添加API名称列
         if api_name:
             col_widths['api_name'] = COL_WIDTH_API_NAME
-        
+
         print(f"[信息] 使用并发测试模式（并发数: {self.concurrent}，速率限制: {self.rate_limit_rpm} RPM）\n")
         sys.stdout.flush()
-        
-        with ThreadPoolExecutor(max_workers=self.concurrent) as executor:
-            # 提交所有测试任务
-            future_to_model = {
-                executor.submit(self._test_single_model, model, test_message, 
-                              test_vision, test_audio, test_embedding, test_image_gen): model
-                for model in models
-            }
-            
-            # 按完成顺序处理结果
-            for future in as_completed(future_to_model):
-                try:
-                    result = future.result()
-                    
-                    with results_lock:
-                        results.append(result)
-                        
-                        # 立即输出测试结果
-                        row = self.format_row(result['model'], result['success'], result['response_time'],
-                                             result['error_code'], result['content'], col_widths, api_name)
-                        print(row)
-                        sys.stdout.flush()
-                        
-                except Exception as e:
-                    model = future_to_model[future]
-                    model_id = model.get('id', model.get('model', 'unknown'))
-                    logger.error(f"测试模型 {model_id} 时发生异常: {e}")
-                    results.append({
-                        'model': model_id,
-                        'success': False,
-                        'response_time': 0,
-                        'error_code': 'EXCEPTION',
-                        'content': str(e)[:200]
-                    })
-        
+
+        # 使用缓冲输出提升性能
+        with BufferedOutput(buffer_size=20) as buffer:
+            with ThreadPoolExecutor(max_workers=self.concurrent) as executor:
+                # 提交所有测试任务
+                future_to_model = {
+                    executor.submit(self._test_single_model, model, test_message,
+                                  test_vision, test_audio, test_embedding, test_image_gen): model
+                    for model in models
+                }
+
+                # 按完成顺序处理结果
+                for future in as_completed(future_to_model):
+                    try:
+                        result = future.result()
+
+                        with results_lock:
+                            results.append(result)
+
+                            # 添加到缓冲区（缓冲区自带线程锁）
+                            row = self.format_row(result['model'], result['success'], result['response_time'],
+                                                 result['error_code'], result['content'], col_widths, api_name)
+                            buffer.add(row)
+
+                    except Exception as e:
+                        model = future_to_model[future]
+                        model_id = model.get('id', model.get('model', 'unknown'))
+                        logger.error(f"测试模型 {model_id} 时发生异常: {e}")
+                        results.append({
+                            'model': model_id,
+                            'success': False,
+                            'response_time': 0,
+                            'error_code': 'EXCEPTION',
+                            'content': str(e)[:200]
+                        })
+
         return results
     
     def categorize_error(self, error_code: str) -> str:
@@ -718,58 +751,50 @@ class ModelTester:
         print(f"{'='*110}\n")
     
 
-    
-    def format_row(self, model_name: str, success: bool, response_time: float, 
+    def format_row(self, model_name: str, success: bool, response_time: float,
                    error_code: str, content: str, col_widths: dict, api_name: str = None) -> str:
-        """格式化输出行"""
-        # 截断过长的字符串
+        """格式化输出行（优化：使用join提升性能）"""
+        # 截断过长的字符串（按显示宽度）
         if display_width(model_name) > col_widths['model']:
-            while display_width(model_name) > col_widths['model'] - 3:
-                model_name = model_name[:-1]
-            model_name = model_name + '...'
-        
+            model_name = truncate_string(model_name, col_widths['model'])
+
         if response_time > 0:
             time_str = f"{response_time:.2f}秒"
         else:
             time_str = '-'
-        
+
         error_str = error_code if error_code else '-'
         if display_width(error_str) > col_widths['error']:
-            while display_width(error_str) > col_widths['error'] - 3:
-                error_str = error_str[:-1]
-            error_str = error_str + '...'
-        
+            error_str = truncate_string(error_str, col_widths['error'])
+
         content_str = content if content else '-'
         content_str = content_str.replace('\n', ' ').replace('\r', ' ')
         if display_width(content_str) > col_widths['content']:
-            while display_width(content_str) > col_widths['content'] - 3:
-                content_str = content_str[:-1]
-            content_str = content_str + '...'
-        
-        # 使用自定义填充函数进行对齐
+            content_str = truncate_string(content_str, col_widths['content'])
+
+        # 优化：使用join代替字符串连接
         if api_name:  # 多API模式
             # 截断API名称
             api_display = api_name
             if display_width(api_display) > col_widths.get('api_name', COL_WIDTH_API_NAME):
-                while display_width(api_display) > col_widths.get('api_name', COL_WIDTH_API_NAME) - 2:
-                    api_display = api_display[:-1]
-                api_display = api_display + '..'
-            
-            row = (
-                f"{pad_string(api_display, col_widths.get('api_name', COL_WIDTH_API_NAME), 'left')} | "
-                f"{pad_string(model_name, col_widths['model'], 'left')} | "
-                f"{pad_string(time_str, col_widths['time'], 'center')} | "
-                f"{pad_string(error_str, col_widths['error'], 'center')} | "
-                f"{pad_string(content_str, col_widths['content'], 'left')}"
-            )
+                api_display = truncate_string(api_display, col_widths.get('api_name', COL_WIDTH_API_NAME))
+
+            parts = [
+                pad_string(api_display, col_widths.get('api_name', COL_WIDTH_API_NAME), 'left'),
+                pad_string(model_name, col_widths['model'], 'left'),
+                pad_string(time_str, col_widths['time'], 'center'),
+                pad_string(error_str, col_widths['error'], 'center'),
+                pad_string(content_str, col_widths['content'], 'left')
+            ]
         else:  # 单API模式
-            row = (
-                f"{pad_string(model_name, col_widths['model'], 'left')} | "
-                f"{pad_string(time_str, col_widths['time'], 'center')} | "
-                f"{pad_string(error_str, col_widths['error'], 'center')} | "
-                f"{pad_string(content_str, col_widths['content'], 'left')}"
-            )
-        return row
+            parts = [
+                pad_string(model_name, col_widths['model'], 'left'),
+                pad_string(time_str, col_widths['time'], 'center'),
+                pad_string(error_str, col_widths['error'], 'center'),
+                pad_string(content_str, col_widths['content'], 'left')
+            ]
+
+        return " | ".join(parts)
     
     def save_results(self, results: List[Dict], output_file: str, test_start_time: str):
         """保存测试结果到文件（使用Reporter，按base_url分类保存）"""
@@ -1180,7 +1205,7 @@ def main():
     parser.add_argument(
         '--api-concurrent',
         type=int,
-        default=DEFAULT_API_CONCURRENT,
+        default=None,
         help=f'多API并发测试数（默认: {DEFAULT_API_CONCURRENT}，1=顺序测试，>1=并发测试多个API）'
     )
     
@@ -1263,8 +1288,10 @@ def main():
     
     # 如果配置了多个API，显示批量测试信息
     if len(valid_apis) > 1:
-        # 检查是否启用多API并发测试
-        api_concurrent = args.api_concurrent if hasattr(args, 'api_concurrent') else DEFAULT_API_CONCURRENT
+        # 检查是否启用多API并发测试（命令行显式指定优先，否则用配置值）
+        perf_cfg = config.config.get('performance', {})
+        cfg_api_concurrent = perf_cfg.get('api_concurrent', DEFAULT_API_CONCURRENT)
+        api_concurrent = args.api_concurrent if (hasattr(args, 'api_concurrent') and args.api_concurrent is not None) else cfg_api_concurrent
         
         if api_concurrent > 1:
             print(f"[信息] 检测到多API配置，将并发测试 {len(valid_apis)} 个API提供商（并发数: {api_concurrent}）:\n")
@@ -1276,16 +1303,12 @@ def main():
         print()
     
     try:
-        # 获取API并发配置（优先级：命令行参数 > 配置文件 > 默认值）
-        # 从配置文件读取默认值
+        # 获取API并发配置（优先级：命令行显式参数 > 配置文件 > 默认值）
         performance_config = config.config.get('performance', {})
         config_api_concurrent = performance_config.get('api_concurrent', DEFAULT_API_CONCURRENT)
-        
-        # 命令行参数优先（如果明确指定了）
-        if hasattr(args, 'api_concurrent'):
+        if hasattr(args, 'api_concurrent') and args.api_concurrent is not None:
             api_concurrent = args.api_concurrent
         else:
-            # 使用配置文件的值
             api_concurrent = config_api_concurrent
         
         # 如果多个API且启用并发
