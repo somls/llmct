@@ -808,12 +808,16 @@ class ModelTester:
                 format_type = 'html'
             else:
                 format_type = 'txt'
-            
+
             # 准备元数据
             success_count = sum(1 for r in results if r['success'])
             fail_count = len(results) - success_count
             success_rate = (success_count / len(results) * 100) if results else 0
-            
+
+            # 收集可用模型列表（成功测试的模型）
+            available_models_list = [r['model'] for r in results if r['success']]
+            available_models = ', '.join(available_models_list) if available_models_list else None
+
             metadata = {
                 'base_url': self.base_url,
                 'test_start_time': test_start_time,
@@ -823,14 +827,14 @@ class ModelTester:
                 'failed': fail_count,
                 'success_rate': success_rate
             }
-            
-            # 使用Reporter生成报告（自动按base_url分类保存）
+
+            # 使用Reporter生成报告（自动按base_url分类保存，传递可用模型列表）
             reporter = Reporter(self.base_url)
-            actual_output_file = reporter.save_report(results, output_file, format=format_type)
-            
+            actual_output_file = reporter.save_report(results, output_file, format=format_type, available_models=available_models)
+
             logger.info(f"测试结果已保存到: {actual_output_file} (格式: {format_type})")
             print(f"[信息] 测试结果已保存到: {actual_output_file}")
-            
+
             return actual_output_file
         except Exception as e:
             logger.warning(f"保存结果失败: {e}")

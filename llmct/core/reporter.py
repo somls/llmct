@@ -29,14 +29,15 @@ class Reporter:
         safe_name = safe_name.strip('_')
         return safe_name
     
-    def save_report(self, results: List[Dict], output_file: str, format: str = 'txt'):
+    def save_report(self, results: List[Dict], output_file: str, format: str = 'txt', available_models: str = None):
         """
         保存测试报告（按base_url分类保存）
-        
+
         Args:
             results: 测试结果列表
             output_file: 输出文件路径
             format: 输出格式 (txt/json/csv/html)
+            available_models: 可用模型列表（逗号分隔）
         """
         format = format.lower()
         
@@ -55,17 +56,17 @@ class Reporter:
         new_output_file = results_dir / new_filename
         
         if format == 'json':
-            self.save_json(results, str(new_output_file))
+            self.save_json(results, str(new_output_file), available_models)
         elif format == 'csv':
-            self.save_csv(results, str(new_output_file))
+            self.save_csv(results, str(new_output_file), available_models)
         elif format == 'html':
-            self.save_html(results, str(new_output_file))
+            self.save_html(results, str(new_output_file), available_models)
         else:  # 默认txt
-            self.save_txt(results, str(new_output_file))
+            self.save_txt(results, str(new_output_file), available_models)
         
         return str(new_output_file)
     
-    def save_txt(self, results: List[Dict], output_file: str):
+    def save_txt(self, results: List[Dict], output_file: str, available_models: str = None):
         """保存为TXT格式（表格格式）"""
         from llmct.utils import display_width, pad_string
         from llmct.constants import (
@@ -90,6 +91,11 @@ class Reporter:
             f.write("大模型连通性和可用性测试结果\n")
             f.write(f"Base URL: {self.base_url}\n")
             f.write(f"测试时间: {self.test_time}\n")
+
+            # 添加可用模型列表
+            if available_models:
+                f.write(f"可用模型: {available_models}\n")
+
             f.write("="*SEPARATOR_WIDTH + "\n\n")
             
             # 写入表头
@@ -138,7 +144,7 @@ class Reporter:
             f.write(f"测试完成 | 总计: {len(results)} | 成功: {success_count} | 失败: {fail_count} | 成功率: {success_rate:.1f}%\n")
             f.write("="*total_width + "\n")
     
-    def save_json(self, results: List[Dict], output_file: str):
+    def save_json(self, results: List[Dict], output_file: str, available_models: str = None):
         """保存为JSON格式"""
         stats = self._generate_statistics(results)
         error_stats = self._generate_error_statistics(results)
@@ -150,7 +156,8 @@ class Reporter:
                 'total': len(results),
                 'success': stats['success_count'],
                 'failed': stats['fail_count'],
-                'success_rate': stats['success_rate']
+                'success_rate': stats['success_rate'],
+                'available_models': available_models  # 添加可用模型列表
             },
             'results': results,
             'statistics': {
@@ -165,23 +172,27 @@ class Reporter:
         with open(output_file, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
     
-    def save_csv(self, results: List[Dict], output_file: str):
+    def save_csv(self, results: List[Dict], output_file: str, available_models: str = None):
         """保存为CSV格式"""
         with open(output_file, 'w', newline='', encoding='utf-8') as f:
+            # 如果有可用模型列表，写入注释行
+            if available_models:
+                f.write(f"# 可用模型: {available_models}\n")
+
             fieldnames = ['model', 'success', 'response_time', 'error_code', 'content']
             writer = csv.DictWriter(f, fieldnames=fieldnames)
-            
+
             writer.writeheader()
             writer.writerows(results)
     
-    def save_html(self, results: List[Dict], output_file: str):
+    def save_html(self, results: List[Dict], output_file: str, available_models: str = None):
         """保存为HTML格式"""
         stats = self._generate_statistics(results)
         error_stats = self._generate_error_statistics(results)
-        
+
         # 生成HTML
-        html = self._generate_html_content(results, stats, error_stats)
-        
+        html = self._generate_html_content(results, stats, error_stats, available_models)
+
         with open(output_file, 'w', encoding='utf-8') as f:
             f.write(html)
     
@@ -227,7 +238,7 @@ class Reporter:
         
         return dict(sorted_errors)
     
-    def _generate_html_content(self, results: List[Dict], stats: Dict, error_stats: Dict) -> str:
+    def _generate_html_content(self, results: List[Dict], stats: Dict, error_stats: Dict, available_models: str = None) -> str:
         """生成HTML内容"""
         # 生成结果表格行
         rows_html = ""
@@ -388,6 +399,7 @@ class Reporter:
         <div class="metadata">
             <p><strong>测试时间:</strong> {self.test_time}</p>
             <p><strong>Base URL:</strong> {self.base_url}</p>
+            {f'<p><strong>可用模型:</strong> {available_models}</p>' if available_models else ''}
         </div>
         
         <div class="summary">
